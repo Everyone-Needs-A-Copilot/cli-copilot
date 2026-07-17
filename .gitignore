@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.mcp.json
+.venv/
+env/
+venv/
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Obsidian vault config (personal, machine-specific)
+.obsidian/
+
+# uv lockfile (project installs via pip)
+uv.lock
+
+# Discord away-mode hook install artifacts (per-machine; via `copilot discord install-hook`)
+.claude/settings.json
+.claude/settings.local.json
+.claude/hooks/discord-*.sh
+.codex/hooks.json
+.codex/hooks/
+
+# Task Copilot local task/work-product database (personal/local state, never shared)
+.copilot/
