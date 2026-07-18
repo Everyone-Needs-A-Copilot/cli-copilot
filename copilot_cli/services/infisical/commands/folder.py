@@ -28,7 +28,7 @@ def list_folders(
         client = state.get_client()
         project_id = project or state.default_project
         if not project_id:
-            from copilot_cli.services.coolify.output.console import err_console
+            from copilot_cli.services.infisical.output.console import err_console
 
             err_console.print("[error]--project is required.[/error]")
             raise typer.Exit(1)
@@ -36,12 +36,12 @@ def list_folders(
         folders = run_async(client.list_folders(project_id, env, path))
 
         if state.is_json():
-            from copilot_cli.services.coolify.output.json_out import output_data
+            from copilot_cli.services.infisical.output.json_out import output_data
 
             output_data(folders, state.output_format)
             return
 
-        from copilot_cli.services.coolify.output.console import console
+        from copilot_cli.services.infisical.output.console import console
 
         if not folders:
             console.print("[dim]No folders found.[/dim]")
@@ -81,7 +81,7 @@ def create_folder(
         client = state.get_client()
         project_id = project or state.default_project
         if not project_id:
-            from copilot_cli.services.coolify.output.console import err_console
+            from copilot_cli.services.infisical.output.console import err_console
 
             err_console.print("[error]--project is required.[/error]")
             raise typer.Exit(1)
@@ -89,12 +89,12 @@ def create_folder(
         folder = run_async(client.create_folder(project_id, env, name, path))
 
         if state.is_json():
-            from copilot_cli.services.coolify.output.json_out import output_data
+            from copilot_cli.services.infisical.output.json_out import output_data
 
             output_data(folder, state.output_format)
             return
 
-        from copilot_cli.services.coolify.output.console import console
+        from copilot_cli.services.infisical.output.console import console
 
         console.print(
             f"[success]Folder created:[/success] {folder.get('path', path + '/' + name)} "

@@ -11,8 +11,8 @@ Service discovery is never hardcoded: `discover_service_groups()` parses
 `copilot_cli/main.py`'s own `app.add_typer(...)` registrations via `ast`,
 so adding or removing a service updates this suite's coverage on the next
 run with zero edits here. The *service* identity used throughout is the
-module name under `copilot_cli/services/` (e.g. "nocodb"), not the CLI
-verb it's registered under (e.g. "crm") — confirmed against
+module name under `copilot_cli/services/` (e.g. "postgresql"), not the CLI
+verb it's registered under (e.g. "db") — confirmed against
 `_collect_health_checks()` in `main.py`, whose check names are always the
 module name, and against `docs/services/*.md` and
 `tests/test_services/test_*.py`, which are both named after the module.
@@ -110,7 +110,7 @@ def test_discovery_found_a_plausible_number_of_services():
     """Guard against the ast parse silently finding zero/one service (a
     main.py refactor that changes the import/add_typer shape would break
     discover_service_groups() silently otherwise)."""
-    assert len(SERVICE_NAMES) >= 15, SERVICE_NAMES
+    assert len(SERVICE_NAMES) >= 10, SERVICE_NAMES
 
 
 # ------------------------------------------------------------------ #
@@ -287,9 +287,7 @@ _SETTINGS_ATTR_RE = re.compile(r"(?:\bsettings\.|get_settings\(\)\.)(\w+)")
 # each one gets expanded to the fields it actually touches.
 _HELPER_METHOD_FIELDS: dict[str, list[str]] = {
     "get_allowed_volumes": ["allowed_volumes"],
-    "get_discord_allowed_user_ids": ["discord_allowed_user_ids"],
     "get_backup_dir": ["backup_dir"],
-    "get_brevo_api_key": ["brevo_api_key"],
     "get_database_configs": [
         "database_url",
         "nocodb_database_url",
@@ -343,24 +341,6 @@ def _shared_settings_env_gaps(service: str) -> list[str]:
     return gaps
 
 
-def _coolify_env_gaps() -> list[str]:
-    from copilot_cli.services.coolify.core.config import (
-        APIConfig,
-        DefaultsConfig,
-        MonitoringConfig,
-        SSHConfig,
-    )
-
-    gaps: list[str] = []
-    for cls in (APIConfig, SSHConfig, DefaultsConfig, MonitoringConfig):
-        prefix = cls.model_config.get("env_prefix", "")
-        for field_name in cls.model_fields:
-            env_name = f"{prefix}{field_name}".upper()
-            if not _documented_in_env_example(env_name):
-                gaps.append(f"{env_name} ({cls.__name__}.{field_name})")
-    return gaps
-
-
 def _infisical_env_gaps() -> list[str]:
     from copilot_cli.services.infisical.core.config import InfisicalSettings
 
@@ -373,8 +353,6 @@ def _infisical_env_gaps() -> list[str]:
 
 
 def config_env_gaps(service: str) -> list[str]:
-    if service == "coolify":
-        return _coolify_env_gaps()
     if service == "infisical":
         return _infisical_env_gaps()
     return _shared_settings_env_gaps(service)

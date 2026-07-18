@@ -39,15 +39,43 @@ def _resolve_local_url(name: str) -> str:
     return configs[name]
 
 
+def _no_remote_adapter_error() -> CopilotError:
+    """Shared error for db commands that need a remote-infrastructure adapter.
+
+    ``db dump`` / ``db pull`` / ``db transition`` (remote source) / ``db
+    remote-query`` resolve a remote database through a Coolify-shaped adapter
+    at ``copilot_cli.services.coolify``. This public foundation does not ship
+    one -- Coolify was an org-specific example, not a generic adapter, and now
+    lives in the ``-internal`` tier. Vendor a compatible adapter at that same
+    import path (same shape as ``core.api_client``, ``core.config``,
+    ``core.resolver``, ``core.tunnel``), or use the local-only ``db``
+    commands instead (query, tables, columns, relationships, schema, explain,
+    stats, backup, vacuum, restore, health).
+    """
+    return CopilotError(
+        "Remote database operations need a Coolify-shaped adapter that isn't "
+        "included in this public foundation.",
+        service="postgresql",
+        hint=(
+            "See docs/services/06-postgresql.md § Coolify integration -- "
+            "vendor a compatible adapter at copilot_cli/services/coolify/, or "
+            "use a local-only db command instead."
+        ),
+    )
+
+
 def _resolve_remote_db(coolify_query: str) -> dict:
     """Resolve a Coolify database name/UUID to its full record (with credentials).
 
     Returns the dict directly from the Coolify API. Raises on failure.
     """
-    from copilot_cli.services.coolify.core.api_client import CoolifyClient
-    from copilot_cli.services.coolify.core.config import require_settings as require_cf
-    from copilot_cli.services.coolify.core.resolver import resolve_database
-    from copilot_cli.services.coolify.main import run_async
+    try:
+        from copilot_cli.services.coolify.core.api_client import CoolifyClient
+        from copilot_cli.services.coolify.core.config import require_settings as require_cf
+        from copilot_cli.services.coolify.core.resolver import resolve_database
+        from copilot_cli.services.coolify.main import run_async
+    except ImportError as exc:
+        raise _no_remote_adapter_error() from exc
 
     cf = require_cf()
     cl = CoolifyClient(cf.api.base_url, cf.api.access_token)
@@ -57,7 +85,10 @@ def _resolve_remote_db(coolify_query: str) -> dict:
 
 def _ssh_target_from_coolify_settings():
     """Build an SSHTarget from the Coolify CLI's [ssh] config block."""
-    from copilot_cli.services.coolify.core.config import load_settings as load_cf
+    try:
+        from copilot_cli.services.coolify.core.config import load_settings as load_cf
+    except ImportError as exc:
+        raise _no_remote_adapter_error() from exc
     from copilot_cli.services.postgresql.transfer import SSHTarget
 
     cf = load_cf()
@@ -69,6 +100,15 @@ def _ssh_target_from_coolify_settings():
             hint="See docs/services/15-coolify.md § SSH Access.",
         )
     return SSHTarget(user=cf.ssh.user, host=cf.ssh.host, port=cf.ssh.port, key_file=cf.ssh.key_file)
+
+
+def _open_tunnel_or_raise():
+    """Import Coolify's SSH tunnel opener, or raise the shared adapter error."""
+    try:
+        from copilot_cli.services.coolify.core.tunnel import open_tunnel
+    except ImportError as exc:
+        raise _no_remote_adapter_error() from exc
+    return open_tunnel
 
 
 # ------------------------------------------------------------------
@@ -561,10 +601,10 @@ def remote_query(
     import psycopg2
     import psycopg2.extras
 
-    from copilot_cli.services.coolify.core.tunnel import open_tunnel
     from copilot_cli.services.postgresql.safety import assert_destructive_allowed
 
     try:
+        open_tunnel = _open_tunnel_or_raise()
         record = _resolve_remote_db(coolify_db)
         if "postgres" not in record.get("database_type", ""):
             raise CopilotError(

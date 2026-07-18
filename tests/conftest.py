@@ -41,21 +41,15 @@ def mock_settings(monkeypatch):
     from copilot_cli.config.settings import Settings
 
     fake = Settings(
-        n8n_base_url="http://localhost:5678",
-        n8n_api_key="test-n8n-key",
         git_user_name="test-user",
         git_user_email="test@example.com",
         docker_socket="/var/run/docker.sock",
         shell_scripts_path="/tmp/test-scripts",
         shell_timeout=30,
-        nocodb_url="http://localhost:8080",
-        nocodb_api_key="test-nocodb-key",
-        nocodb_base_id="test-base-id",
         database_url="postgresql://test:test@localhost:5432/main",
         nocodb_database_url="postgresql://test:test@localhost:5432/nocodb",
         n8n_database_url="postgresql://test:test@localhost:5432/n8n",
         formbricks_database_url="",
-        brevo_api_key="dGVzdC1icmV2by1rZXk=",
         allowed_volumes="/tmp,/Volumes/Dev",
         max_file_size_mb=10,
         cpu_alert_threshold=80,

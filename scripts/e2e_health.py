@@ -26,9 +26,6 @@ CHECKS: list[Check] = [
     Check("filesystem", ["fs", "health"]),
     Check("services", ["services", "health"]),
     Check("postgresql", ["db", "health"]),
-    Check("nocodb", ["crm", "health"]),
-    Check("brevo", ["brevo", "health"]),
-    Check("n8n", ["n8n", "health"]),
     Check("docs", ["docs", "health"]),
     Check("bi", ["bi", "health"]),
     Check("monitoring", ["monitoring", "health"]),
@@ -94,10 +91,6 @@ def main() -> int:
     for check in CHECKS:
         status, reason = _run_check(runner, check)
         rows.append((check.name, status, reason))
-
-    # Coolify check (reads from .env via CLI config loader as well as process env)
-    status, reason = _run_check(runner, Check("coolify", ["coolify", "version"]))
-    rows.append(("coolify", status, reason))
 
     print("")
     print("Service      Status  Notes")

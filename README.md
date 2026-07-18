@@ -1,8 +1,8 @@
 # CLI Copilot
 
-Unified command-line interface for infrastructure, APIs, databases, monitoring, and skill execution. One CLI, 17 services, portable across all Copilot projects. <!-- claim-check: cli-copilot-service-count -->
+Unified command-line interface for infrastructure, APIs, databases, monitoring, and skill execution. One CLI, 12 services, portable across all Copilot projects. <!-- claim-check: cli-copilot-service-count -->
 
-This repo is the **public base** for the `copilot` integration CLI: a credential-free foundation containing only generic, broadly-reusable service adapters (git, Docker, Postgres, Coolify, Discord, and so on) — never anything specific to one company or product. It's a starting point for adopters who want the generic adapters plus a clear, guided pattern for adding their own. See "How This Fits in the Ecosystem" below for how a private, organization-specific layer builds on top of this foundation.
+This repo is the **public base** for the `copilot` integration CLI: a credential-free foundation containing only generic, broadly-reusable service adapters (git, Docker, Postgres, and so on) — never anything specific to one company or product. It's a starting point for adopters who want the generic adapters plus a clear, guided pattern for adding their own. See "How This Fits in the Ecosystem" below for how a private, organization-specific layer builds on top of this foundation.
 
 ## Quick Start
 
@@ -52,35 +52,34 @@ pip install -e .
 | `copilot fs` | Filesystem | Read, write, delete, copy, move, list, search files |
 | `copilot services` | System Services | macOS launchctl service management |
 | `copilot db` | PostgreSQL | Multi-database queries, schema introspection, backups |
-| `copilot crm` | NocoDB | Client, project, lead, and table management |
-| `copilot brevo` | Brevo | Contacts, lists, campaigns, templates, transactional email |
-| `copilot n8n` | n8n | Workflow and execution management |
 | `copilot docs` | Documents | Document CRUD, search, collections |
 | `copilot bi` | Business Intelligence | Data analysis, pattern detection, KPIs |
 | `copilot monitoring` | Monitoring | System metrics, alerts, health checks |
-| `copilot coolify` | Coolify | Coolify infrastructure management |
 | `copilot infisical` | Infisical | Secrets management — projects, folders, secrets, machine identities |
 | `copilot skill` | Skill Runtime | Discover, plan, execute, verify, and audit skills |
 | `copilot uspto` | USPTO | Patent/trademark data access, TSDR retrieval, ODP requests |
-| `copilot discord` | Discord | Active-session handoff threads and reply polling |
+
+Five org-specific vendor adapters that used to ship here (`crm`/NocoDB, `brevo`, `n8n`, `coolify`, `discord`) have moved to the org-specific `-internal` tier — see "Reference adapters" below.
 
 Every service supports `--help`:
 ```bash
 copilot docker --help
 copilot db query --help
-copilot crm clients list --help
+copilot uspto patents search --help
 cli_copilot uspto health
 ```
 
 ## Adding Your Own Integration
 
-This foundation ships 17 generic service adapters. To add your own — a private API, an internal tool, anything not already covered — run the guided wizard from Claude Code:
+This foundation ships 12 generic service adapters. To add your own — a private API, an internal tool, anything not already covered — run the guided wizard from Claude Code:
 
 ```
 /setup-integration
 ```
 
-It has the "right conversation" (service name, auth type, endpoints, operations, rate limits, secret names/scope), lets you choose **Python** (first-class — plugs straight into this repo's adapter architecture and is how all 17 built-in adapters work) or **Go** (a standalone binary via a documented stdin/stdout JSON subprocess contract), teaches the key-storage model (below), and then scaffolds the service — client, commands, config fields, tests, and docs — registering it in `main.py` for you. See [`.claude/commands/setup-integration.md`](.claude/commands/setup-integration.md) for the full wizard script.
+It has the "right conversation" (service name, auth type, endpoints, operations, rate limits, secret names/scope), lets you choose **Python** (first-class — plugs straight into this repo's adapter architecture and is how all 12 built-in adapters work) or **Go** (a standalone binary via a documented stdin/stdout JSON subprocess contract), teaches the key-storage model (below), and then scaffolds the service — client, commands, config fields, tests, and docs — registering it in `main.py` for you. See [`.claude/commands/setup-integration.md`](.claude/commands/setup-integration.md) for the full wizard script.
+
+**Reference adapters:** Before scaffolding, skim two existing adapters as worked examples — `uspto` (`copilot_cli/services/uspto/`, [`docs/services/20-uspto.md`](docs/services/20-uspto.md)) for an **unauthenticated external REST API** (read pattern), and `infisical` (`copilot_cli/services/infisical/`, [`docs/services/18-infisical.md`](docs/services/18-infisical.md)) for an **authenticated API that implements the `requires_secret` secrets contract** (auth + secret pattern). The `/setup-integration` wizard and the `new-service-scaffold` skill ([`.claude/skills/new-service-scaffold/`](.claude/skills/new-service-scaffold/)) both model a new adapter on these same two shapes. The secrets *contract* — `requires_secret: <NAME>` plus keychain/managed-store resolution — is the foundational principle; `infisical` is one example implementation of it, not the only valid choice (Vault, 1Password, and AWS Secrets Manager are equally valid backends for the same contract).
 
 ## How This Fits in the Ecosystem
 
@@ -101,33 +100,19 @@ If a secret can't be resolved, the command fails closed with `missing secret <NA
 copilot docker ps --all
 copilot docker restart my-container
 
-# Database
+# Database (nocodb/n8n here are example logical db names, not services)
 copilot db query nocodb "SELECT * FROM clients LIMIT 10"
 copilot db tables n8n
 copilot db schema nocodb
 
-# CRM
-copilot crm clients list --limit 50
-copilot crm projects list
-
-# Email Marketing
-copilot brevo contacts list
-copilot brevo campaigns list
-
-# Automation
-copilot n8n workflows list
-copilot n8n executions list --limit 5
+# Secrets (Infisical)
+copilot infisical secret list --project <project-id>
+copilot infisical project list
 
 # System
 copilot monitoring status
 copilot fs ls /Volumes/DockerApps
 copilot services list
-
-# Discord bridge
-copilot discord bridge install
-copilot discord bridge start
-copilot discord bridge launch codex --cwd /path/to/cli-copilot
-copilot discord doctor
 
 # Skills
 copilot skill list                          # Discover all skills

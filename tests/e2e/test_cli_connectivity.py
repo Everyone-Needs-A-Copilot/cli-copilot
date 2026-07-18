@@ -75,9 +75,6 @@ def _assert_ok(args: list[str]) -> None:
         ["fs", "health"],
         ["services", "health"],
         ["db", "health"],
-        ["crm", "health"],
-        ["brevo", "health"],
-        ["n8n", "health"],
         ["docs", "health"],
         ["bi", "health"],
         ["monitoring", "health"],
@@ -86,13 +83,3 @@ def _assert_ok(args: list[str]) -> None:
 def test_cli_connectivity_smoke(args: list[str]) -> None:
     """Every CLI group should pass a lightweight read-only check."""
     _assert_ok(args)
-
-
-def test_coolify_connectivity_when_configured() -> None:
-    """Run a Coolify connectivity check only when credentials are present."""
-    has_url = bool(os.environ.get("COOLIFY_BASE_URL"))
-    has_token = bool(os.environ.get("COOLIFY_ACCESS_TOKEN") or os.environ.get("COOLIFY_API_KEY"))
-    if not (has_url and has_token):
-        pytest.skip("Coolify credentials not set in environment.")
-
-    _assert_ok(["coolify", "version"])

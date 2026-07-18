@@ -1,4 +1,9 @@
-"""JSON and YAML output formatters."""
+"""JSON and YAML output formatters.
+
+See the note in ``console.py`` in this package: copied from
+``copilot_cli.services.coolify.output.json_out`` so ``infisical`` no longer
+depends on the (removed) ``coolify`` adapter.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from copilot_cli.services.coolify.output.console import console
+from copilot_cli.services.infisical.output.console import console
 
 _SENSITIVE_FIELD_PARTS = {"password", "secret", "token"}
 _SENSITIVE_FIELD_SUFFIXES = ("_api_key", "_license_key", "_private_key")
@@ -28,7 +33,9 @@ def redact_sensitive_data(data: Any) -> Any:
     """Return a recursively redacted copy of structured API output."""
     if isinstance(data, dict):
         return {
-            key: "[REDACTED]" if _is_sensitive_field(key) and value else redact_sensitive_data(value)
+            key: "[REDACTED]"
+            if _is_sensitive_field(key) and value
+            else redact_sensitive_data(value)
             for key, value in data.items()
         }
     if isinstance(data, list):

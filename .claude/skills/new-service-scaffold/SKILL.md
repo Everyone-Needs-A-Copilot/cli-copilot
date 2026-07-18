@@ -50,7 +50,7 @@ touch copilot_cli/services/<name>/commands.py
 
 Choose the pattern based on service type:
 
-**Class-based client pattern** (for API services — used by 11 services):
+**Class-based client pattern** (for API services — used by 6 services):
 
 ```python
 """<Name> CLI commands."""
@@ -304,7 +304,7 @@ pytest tests/test_services/test_redis.py -v
 4. All errors use `shared/errors.py` hierarchy
 5. HTTP services use `shared/http_client.py` wrapper
 6. All tests mock external dependencies — no real API calls
-7. Use sub-Typer apps for nested command groups (see `crm`, `coolify` for examples)
+7. Use sub-Typer apps for nested command groups (see `uspto`, `infisical` for examples)
 
 ## References
 
@@ -315,6 +315,7 @@ pytest tests/test_services/test_redis.py -v
 - Settings: `copilot_cli/config/settings.py`
 - Test fixtures: `tests/conftest.py`
 - Existing services (reference patterns):
-  - Class-based: `copilot_cli/services/nocodb/` (REST API client)
+  - Class-based, unauthenticated REST (read pattern): `copilot_cli/services/uspto/`
+  - Class-based, authenticated + `requires_secret` contract (auth + secret pattern): `copilot_cli/services/infisical/`
   - Module-level: `copilot_cli/services/monitoring/` (local system)
-  - Nested commands: `copilot_cli/services/coolify/` (many sub-groups)
+  - Nested commands: `copilot_cli/services/uspto/` or `copilot_cli/services/infisical/` (many sub-groups)

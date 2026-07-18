@@ -24,7 +24,7 @@ def list_identities() -> None:
         client = state.get_client()
         org_id = run_async(client.get_org_id(state.org_id))
         if not org_id:
-            from copilot_cli.services.coolify.output.console import err_console
+            from copilot_cli.services.infisical.output.console import err_console
 
             err_console.print("[error]Could not determine organisation ID.[/error]")
             raise typer.Exit(1)
@@ -32,12 +32,12 @@ def list_identities() -> None:
         identities = run_async(client.list_identities(org_id))
 
         if state.is_json():
-            from copilot_cli.services.coolify.output.json_out import output_data
+            from copilot_cli.services.infisical.output.json_out import output_data
 
             output_data(identities, state.output_format)
             return
 
-        from copilot_cli.services.coolify.output.console import console
+        from copilot_cli.services.infisical.output.console import console
 
         if not identities:
             console.print("[dim]No identities found.[/dim]")
@@ -80,7 +80,7 @@ def create_identity(
         client = state.get_client()
         org_id = run_async(client.get_org_id(state.org_id))
         if not org_id:
-            from copilot_cli.services.coolify.output.console import err_console
+            from copilot_cli.services.infisical.output.console import err_console
 
             err_console.print("[error]Could not determine organisation ID.[/error]")
             raise typer.Exit(1)
@@ -88,12 +88,12 @@ def create_identity(
         identity = run_async(client.create_identity(name, org_id, role))
 
         if state.is_json():
-            from copilot_cli.services.coolify.output.json_out import output_data
+            from copilot_cli.services.infisical.output.json_out import output_data
 
             output_data(identity, state.output_format)
             return
 
-        from copilot_cli.services.coolify.output.console import console
+        from copilot_cli.services.infisical.output.console import console
 
         console.print(
             f"[success]Identity created:[/success] {identity.get('name', name)} "

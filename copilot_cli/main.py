@@ -53,17 +53,12 @@ def main(
 # --- Register service subcommands ---
 
 from .services.bi.commands import app as bi_app
-from .services.brevo.commands import app as brevo_app
-from .services.coolify.main import app as coolify_app
-from .services.discord.commands import app as discord_app
 from .services.docker.commands import app as docker_app
 from .services.document.commands import app as docs_app
 from .services.filesystem.commands import app as fs_app
 from .services.git.commands import app as git_app
 from .services.infisical.main import app as infisical_app
 from .services.monitoring.commands import app as monitoring_app
-from .services.n8n.commands import app as n8n_app
-from .services.nocodb.commands import app as crm_app
 from .services.postgresql.commands import app as db_app
 from .services.shell.commands import app as shell_app
 from .services.skill.commands import app as skill_app
@@ -73,17 +68,12 @@ from .services.uspto.commands import app as uspto_app
 app.add_typer(git_app, name="git", help="Git repository operations")
 app.add_typer(docker_app, name="docker", help="Docker container management")
 app.add_typer(shell_app, name="shell", help="Shell command execution")
-app.add_typer(discord_app, name="discord", help="Discord handoff threads")
 app.add_typer(fs_app, name="fs", help="File system operations")
 app.add_typer(services_app, name="services", help="System service management (launchctl)")
 app.add_typer(db_app, name="db", help="PostgreSQL database operations")
-app.add_typer(crm_app, name="crm", help="NocoDB CRM operations")
-app.add_typer(brevo_app, name="brevo", help="Brevo email marketing")
-app.add_typer(n8n_app, name="n8n", help="n8n workflow automation")
 app.add_typer(docs_app, name="docs", help="Document management")
 app.add_typer(bi_app, name="bi", help="Business intelligence")
 app.add_typer(monitoring_app, name="monitoring", help="System monitoring")
-app.add_typer(coolify_app, name="coolify", help="Coolify infrastructure management")
 app.add_typer(infisical_app, name="infisical", help="Infisical secrets management")
 app.add_typer(skill_app, name="skill", help="Skill runtime — discover, execute, verify skills")
 app.add_typer(uspto_app, name="uspto", help="USPTO patent and trademark data access")
@@ -125,27 +115,6 @@ def _collect_health_checks() -> tuple[list[tuple[str, callable]], list[str]]:
         skipped.append("system_services")
 
     try:
-        from .services.n8n.client import N8nClient
-
-        checks.append(("n8n", lambda: N8nClient().health()))
-    except (ImportError, ModuleNotFoundError):
-        skipped.append("n8n")
-
-    try:
-        from .services.nocodb.client import NocoDBClient
-
-        checks.append(("nocodb", lambda: NocoDBClient().health()))
-    except (ImportError, ModuleNotFoundError):
-        skipped.append("nocodb")
-
-    try:
-        from .services.brevo.client import BrevoClient
-
-        checks.append(("brevo", lambda: BrevoClient().health()))
-    except (ImportError, ModuleNotFoundError):
-        skipped.append("brevo")
-
-    try:
         from .services.postgresql.client import PostgreSQLClient
 
         checks.append(("postgresql", lambda: PostgreSQLClient().health()))
@@ -174,34 +143,6 @@ def _collect_health_checks() -> tuple[list[tuple[str, callable]], list[str]]:
         skipped.append("monitoring")
 
     try:
-        import asyncio
-
-        from .services.coolify.core.api_client import CoolifyClient
-        from .services.coolify.core.config import load_settings
-
-        def _coolify_health():
-            settings = load_settings()
-            if not settings.api.base_url or not settings.api.access_token:
-                return {
-                    "healthy": False,
-                    "error": "Missing COOLIFY_BASE_URL and COOLIFY_ACCESS_TOKEN (or COOLIFY_API_KEY)",
-                }
-
-            async def _check():
-                client = CoolifyClient(settings.api.base_url, settings.api.access_token)
-                try:
-                    version = await client.validate_connection()
-                    return {"healthy": True, "version": version}
-                finally:
-                    await client.close()
-
-            return asyncio.run(_check())
-
-        checks.append(("coolify", _coolify_health))
-    except (ImportError, ModuleNotFoundError):
-        skipped.append("coolify")
-
-    try:
         from .services.skill.client import SkillClient
 
         checks.append(("skill", lambda: SkillClient().health()))
@@ -228,13 +169,6 @@ def _collect_health_checks() -> tuple[list[tuple[str, callable]], list[str]]:
         checks.append(("shell", shell_health))
     except (ImportError, ModuleNotFoundError):
         skipped.append("shell")
-
-    try:
-        from .services.discord.client import DiscordClient
-
-        checks.append(("discord", lambda: DiscordClient().health()))
-    except (ImportError, ModuleNotFoundError):
-        skipped.append("discord")
 
     try:
         import asyncio

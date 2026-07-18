@@ -50,7 +50,7 @@ Or just run `copilot` from within the project directory — it will find the pro
 ## Verification
 
 ```bash
-copilot --help       # Shows all 19 subcommands
+copilot --help       # Shows all registered subcommands (12 services + health)
 copilot --version    # Shows current version
 copilot health       # Checks all services
 ```

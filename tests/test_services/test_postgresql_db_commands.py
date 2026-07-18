@@ -6,8 +6,10 @@ tests in test_postgresql_transfer.py and test_postgresql_safety.py.
 
 Patching strategy
 -----------------
-- ``_resolve_remote_db`` and ``_ssh_target_from_coolify_settings`` are patched
-  at the command module level to avoid Coolify API calls.
+- ``_resolve_remote_db``, ``_ssh_target_from_coolify_settings``, and
+  ``_open_tunnel_or_raise`` are patched at the command module level to avoid
+  needing a real Coolify-shaped adapter (this public foundation does not
+  ship one -- see ``TestRemoteAdapterAbsent`` below).
 - ``_resolve_local_url`` is patched at the command module level to return
   whatever URL the test needs (loopback to simulate local, remote host to
   exercise the policy guard).
@@ -49,6 +51,7 @@ FAKE_REMOTE_RECORD = {
 FAKE_SSH_TARGET_PATH = "copilot_cli.services.postgresql.commands._ssh_target_from_coolify_settings"
 FAKE_RESOLVE_REMOTE_PATH = "copilot_cli.services.postgresql.commands._resolve_remote_db"
 FAKE_RESOLVE_LOCAL_PATH = "copilot_cli.services.postgresql.commands._resolve_local_url"
+FAKE_OPEN_TUNNEL_PATH = "copilot_cli.services.postgresql.commands._open_tunnel_or_raise"
 FAKE_REMOTE_DUMP_PATH = "copilot_cli.services.postgresql.transfer.remote_pg_dump"
 FAKE_LOCAL_RESTORE_PATH = "copilot_cli.services.postgresql.transfer.local_pg_restore"
 FAKE_SETTINGS_PATH = "copilot_cli.config.settings.get_settings"
@@ -418,7 +421,7 @@ class TestDbRemoteQueryHappyPath:
         with (
             patch(FAKE_RESOLVE_REMOTE_PATH, return_value=FAKE_REMOTE_RECORD),
             patch(FAKE_SSH_TARGET_PATH, return_value=fake_ssh_target),
-            patch("copilot_cli.services.coolify.core.tunnel.open_tunnel", _fake_tunnel),
+            patch(FAKE_OPEN_TUNNEL_PATH, return_value=_fake_tunnel),
             patch("psycopg2.connect", return_value=mock_conn),
         ):
             result = runner.invoke(
@@ -461,7 +464,7 @@ class TestDbRemoteQueryDestructiveRefused:
         with (
             patch(FAKE_RESOLVE_REMOTE_PATH, return_value=FAKE_REMOTE_RECORD),
             patch(FAKE_SSH_TARGET_PATH, return_value=fake_ssh_target),
-            patch("copilot_cli.services.coolify.core.tunnel.open_tunnel", _fake_tunnel),
+            patch(FAKE_OPEN_TUNNEL_PATH, return_value=_fake_tunnel),
             patch("psycopg2.connect") as mock_connect,
         ):
             result = runner.invoke(app, ["db", "remote-query", "myapp-db", sql])
@@ -491,3 +494,47 @@ class TestDbTransitionPlaceholder:
         # If the command does exist, verify it at least shows help without crashing.
         result = runner.invoke(app, ["db", "transition", "--help"])
         assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# Remote-infra adapter absent — this public foundation ships no 'coolify'
+# (or equivalent) adapter, so the guarded import points must fail with a
+# clean CopilotError, never a raw ImportError/traceback. These exercise the
+# *real*, unpatched import paths -- copilot_cli.services.coolify genuinely
+# does not exist in this repo, so this is a true regression test, not a
+# simulated one.
+# ---------------------------------------------------------------------------
+
+
+class TestRemoteAdapterAbsent:
+    def test_resolve_remote_db_raises_clean_error(self):
+        from copilot_cli.services.postgresql.commands import _resolve_remote_db
+        from copilot_cli.shared.errors import CopilotError
+
+        with pytest.raises(CopilotError, match="Coolify"):
+            _resolve_remote_db("myapp-db")
+
+    def test_ssh_target_raises_clean_error(self):
+        from copilot_cli.services.postgresql.commands import (
+            _ssh_target_from_coolify_settings,
+        )
+        from copilot_cli.shared.errors import CopilotError
+
+        with pytest.raises(CopilotError, match="Coolify"):
+            _ssh_target_from_coolify_settings()
+
+    def test_open_tunnel_raises_clean_error(self):
+        from copilot_cli.services.postgresql.commands import _open_tunnel_or_raise
+        from copilot_cli.shared.errors import CopilotError
+
+        with pytest.raises(CopilotError, match="Coolify"):
+            _open_tunnel_or_raise()
+
+    def test_remote_query_command_exits_1_with_hint_not_traceback(self, runner):
+        """End-to-end: `db remote-query` against the real (absent) adapter
+        exits cleanly with a hint, rather than an unhandled ImportError."""
+        result = runner.invoke(app, ["db", "remote-query", "myapp-db", "SELECT 1"])
+
+        assert result.exit_code == 1
+        assert "Coolify" in result.output
+        assert "Traceback" not in result.output

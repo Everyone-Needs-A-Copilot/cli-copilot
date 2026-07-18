@@ -29,9 +29,6 @@ def test_subcommands_registered():
     assert "fs" in result.output
     assert "services" in result.output
     assert "db" in result.output
-    assert "crm" in result.output
-    assert "brevo" in result.output
-    assert "n8n" in result.output
     assert "docs" in result.output
     assert "bi" in result.output
     assert "monitoring" in result.output
@@ -54,25 +51,11 @@ def test_db_help():
     assert "tables" in result.output
 
 
-def test_crm_help():
-    result = runner.invoke(app, ["crm", "--help"])
-    assert result.exit_code == 0
-    assert "clients" in result.output
-    assert "projects" in result.output
-
-
 def test_git_help():
     result = runner.invoke(app, ["git", "--help"])
     assert result.exit_code == 0
     assert "clone" in result.output
     assert "status" in result.output
-
-
-def test_n8n_help():
-    result = runner.invoke(app, ["n8n", "--help"])
-    assert result.exit_code == 0
-    assert "workflows" in result.output
-    assert "executions" in result.output
 
 
 def test_uspto_help():

@@ -2,9 +2,9 @@
 
 Real code patterns from representative copilot CLI services. Use as a reference when scaffolding new services.
 
-## Pattern 1: Class-Based Client (10 services)
+## Pattern 1: Class-Based Client (6 services)
 
-Used by: git, docker, postgresql, nocodb, brevo, n8n, skill, infisical, discord, uspto
+Used by: git, docker, postgresql, skill, infisical, uspto
 
 **Best for:** External API services that need authentication and stateful HTTP connections.
 
@@ -173,13 +173,13 @@ def get_status() -> dict:
 - No `get_settings()` needed (uses system APIs directly)
 - Same `health() -> dict` contract as class-based
 
-## Pattern 3: Nested Command Groups (coolify)
+## Pattern 3: Nested Command Groups (uspto / infisical)
 
-Used by: coolify (most complex service — see `copilot_cli/services/coolify/` for the real code)
+Used by: `uspto` (most complex service — see `copilot_cli/services/uspto/` for the real code) and `infisical`.
 
-**Best for:** Services with many command groups (server, app, database, service, deploy, envvar, backup, key, monitor).
+**Best for:** Services with many command groups (uspto: auth, patents, trademarks, assignments, copyright, dossier, watch, sessions, portal, tsdr, discover; infisical: project, folder, secret, identity, org).
 
-### commands.py pattern (abbreviated, modeled on coolify's real structure)
+### commands.py pattern (abbreviated, modeled on uspto's real structure)
 
 ```python
 """Example CLI commands with many nested sub-groups."""
@@ -190,24 +190,22 @@ import typer
 app = typer.Typer(no_args_is_help=True)
 
 # Many sub-groups
-server_app = typer.Typer(no_args_is_help=True)
-app_app = typer.Typer(no_args_is_help=True)
-db_app = typer.Typer(no_args_is_help=True)
-deploy_app = typer.Typer(no_args_is_help=True)
-envvar_app = typer.Typer(no_args_is_help=True)
-backup_app = typer.Typer(no_args_is_help=True)
-key_app = typer.Typer(no_args_is_help=True)
+auth_app = typer.Typer(no_args_is_help=True)
+patents_app = typer.Typer(no_args_is_help=True)
+trademarks_app = typer.Typer(no_args_is_help=True)
+dossier_app = typer.Typer(no_args_is_help=True)
+watch_app = typer.Typer(no_args_is_help=True)
+sessions_app = typer.Typer(no_args_is_help=True)
 
-app.add_typer(server_app, name="server", help="Server management")
-app.add_typer(app_app, name="app", help="Application management")
-app.add_typer(db_app, name="db", help="Database management")
-app.add_typer(deploy_app, name="deploy", help="Deployment operations")
-app.add_typer(envvar_app, name="envvar", help="Environment variable management")
-app.add_typer(backup_app, name="backup", help="Backup management")
-app.add_typer(key_app, name="key", help="SSH key management")
+app.add_typer(auth_app, name="auth", help="Auth requirements and capture instructions")
+app.add_typer(patents_app, name="patents", help="Patent search and data access")
+app.add_typer(trademarks_app, name="trademarks", help="Trademark search and data access")
+app.add_typer(dossier_app, name="dossier", help="Dossier building")
+app.add_typer(watch_app, name="watch", help="Watch/alert management")
+app.add_typer(sessions_app, name="sessions", help="Session capture")
 ```
 
-**Key pattern:** Each domain concept gets its own sub-Typer for clean namespacing: `copilot coolify server healthcheck`, `copilot coolify deploy trigger`, etc.
+**Key pattern:** Each domain concept gets its own sub-Typer for clean namespacing: `copilot uspto patents search "..."`, `copilot uspto auth show <artifact-id>`, etc.
 
 ## When to Use Each Pattern
 
@@ -222,8 +220,8 @@ app.add_typer(key_app, name="key", help="SSH key management")
 
 ```python
 # All services follow the same registration pattern:
-from .services.nocodb.commands import app as crm_app
-app.add_typer(crm_app, name="crm", help="NocoDB CRM operations")
+from .services.uspto.commands import app as uspto_app
+app.add_typer(uspto_app, name="uspto", help="USPTO patent and trademark data access")
 
 from .services.monitoring.commands import app as monitoring_app
 app.add_typer(monitoring_app, name="monitoring", help="System monitoring")

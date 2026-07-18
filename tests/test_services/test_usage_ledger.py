@@ -59,11 +59,11 @@ class TestCommandPath:
 
     def test_deeply_nested_command(self):
         root = _fake_ctx("copilot", parent=None)
-        group = _fake_ctx("discord", parent=root)
-        subgroup = _fake_ctx("await", parent=group)
-        leaf = _fake_ctx("on", parent=subgroup)
+        group = _fake_ctx("uspto", parent=root)
+        subgroup = _fake_ctx("auth", parent=group)
+        leaf = _fake_ctx("show", parent=subgroup)
 
-        assert usage_ledger._command_path(leaf) == "discord await on"
+        assert usage_ledger._command_path(leaf) == "uspto auth show"
 
 
 # ------------------------------------------------------------------ #
@@ -231,32 +231,32 @@ class TestLedgerEndToEnd:
         assert secret not in raw_log
 
     def test_nested_command_path_resolves_and_hides_argument(self, runner, tmp_path, monkeypatch):
-        """A 3-level nested command (discord await on <thread_id>) records the
-        full group chain and never the thread id argument."""
+        """A 3-level nested command (uspto auth show <artifact_id>) records the
+        full group chain and never the artifact id argument."""
         from copilot_cli.shared.errors import CopilotError
 
         log_path = tmp_path / "usage.jsonl"
         monkeypatch.setenv("COPILOT_USAGE_LOG", "1")
         monkeypatch.setenv("COPILOT_USAGE_LOG_PATH", str(log_path))
 
-        thread_id = "thread-should-not-leak-999"
+        artifact_id = "artifact-should-not-leak-999"
         mock_client = MagicMock()
-        mock_client.set_await.side_effect = CopilotError(
-            f"No Discord handoff is registered for thread {thread_id}.",
-            service="discord",
+        mock_client.auth_instructions.side_effect = CopilotError(
+            f"Unknown auth artifact {artifact_id}.",
+            service="uspto",
         )
         with patch(
-            "copilot_cli.services.discord.commands._client",
+            "copilot_cli.services.uspto.commands._client",
             return_value=mock_client,
         ):
-            result = runner.invoke(app, ["discord", "await", "on", thread_id])
+            result = runner.invoke(app, ["uspto", "auth", "show", artifact_id])
 
         assert result.exit_code == 1
         raw_log = log_path.read_text(encoding="utf-8")
         entry = json.loads(raw_log.strip().splitlines()[-1])
-        assert entry["cmd"] == "discord await on"
+        assert entry["cmd"] == "uspto auth show"
         assert entry["exit_code"] == 1
-        assert thread_id not in entry["cmd"]
+        assert artifact_id not in entry["cmd"]
 
     def test_ledger_write_failure_does_not_break_command(self, runner, tmp_path, monkeypatch):
         """RESILIENCE INVARIANT: an unwritable ledger path never fails the command."""

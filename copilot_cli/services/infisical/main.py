@@ -7,9 +7,9 @@ from typing import Annotated
 
 import typer
 
-from copilot_cli.services.coolify.output.console import console, err_console
 from copilot_cli.services.infisical.core.api_client import InfisicalClient
 from copilot_cli.services.infisical.core.config import load_settings
+from copilot_cli.services.infisical.output.console import console, err_console
 
 # ─── Global state ─────────────────────────────────────────────────────────────
 
@@ -131,7 +131,7 @@ def config_show() -> None:
     )
 
     if state.is_json():
-        from copilot_cli.services.coolify.output.json_out import output_data
+        from copilot_cli.services.infisical.output.json_out import output_data
 
         data: dict = {
             "base_url": settings.base_url,

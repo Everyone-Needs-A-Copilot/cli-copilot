@@ -24,7 +24,7 @@ def disable_signup(
     """
     state, run_async, handle_error = _get_deps()
     try:
-        from copilot_cli.services.coolify.output.console import console
+        from copilot_cli.services.infisical.output.console import console
 
         # Show current state first
         client = state.get_client()
@@ -42,7 +42,7 @@ def disable_signup(
         result = run_async(client.update_admin_config(allowSignUp=False))
 
         if state.is_json():
-            from copilot_cli.services.coolify.output.json_out import output_data
+            from copilot_cli.services.infisical.output.json_out import output_data
 
             output_data(result, state.output_format)
             return

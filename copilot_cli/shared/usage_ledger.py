@@ -2,13 +2,14 @@
 
 SOUL.md's statelessness stance ("The Stateful Store" anti-pattern) is about
 *portability* -- the binary must work unchanged in any project -- not
-privacy, and it is already breached in practice by three services that
-persist local state (uspto session capture, the discord handoff registry,
-and Coolify's three-layer config; the last is the one SOUL.md documents as
-a tolerated exception). This ledger is the
-second, explicitly documented exception: it exists only to answer "is this
-CLI actually used, and by which commands" (a usage-frequency audit finding)
-and is OFF by default so the charter default is preserved.
+privacy, and it is already breached in practice by uspto's local
+session-capture state (a narrow, documented exception; the discord handoff
+registry and Coolify's three-layer config were two more, but both now live
+in the org-specific `-internal` tier, not this public foundation). This
+ledger is the second, explicitly documented exception: it exists only to
+answer "is this CLI actually used, and by which commands" (a
+usage-frequency audit finding) and is OFF by default so the charter default
+is preserved.
 
 Enable with ``COPILOT_USAGE_LOG=1``. When enabled, every command
 invocation appends one JSON line to ``~/.copilot-cli/usage.jsonl``

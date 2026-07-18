@@ -167,7 +167,7 @@ copilot skill audit --path .claude/skills/deploy-product
 
 ## Client Pattern
 
-Class-based client (`SkillClient`) with lazy `_client()` factory, following the same pattern as the other class-based services (e.g. `nocodb`, `brevo`, `uspto`).
+Class-based client (`SkillClient`) with lazy `_client()` factory, following the same pattern as the other class-based services (e.g. `uspto`, `infisical`).
 
 ## Models
 

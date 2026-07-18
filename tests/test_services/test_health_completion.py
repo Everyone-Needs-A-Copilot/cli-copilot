@@ -1,7 +1,8 @@
 """Tests for the top-level `copilot health` command and its check registry.
 
-Covers the health-completion work (git, shell, discord, infisical were the
-four groups missing from `copilot health`). The registry itself
+Covers the health-completion work (git, shell, infisical -- and, historically,
+discord -- were the groups missing from `copilot health`; discord has since
+moved to the org-specific `-internal` tier). The registry itself
 (`_collect_health_checks`) is tested without executing any check, so this
 file makes zero real network/subprocess/filesystem calls -- consistent
 with SOUL.md's "Lazy & Mockable" principle.
@@ -22,19 +23,14 @@ EXPECTED_SERVICES = {
     "docker",
     "filesystem",
     "system_services",
-    "n8n",
-    "nocodb",
-    "brevo",
     "postgresql",
     "document",
     "bi",
     "monitoring",
-    "coolify",
     "skill",
     "uspto",
     "git",
     "shell",
-    "discord",
     "infisical",
 }
 
@@ -52,15 +48,15 @@ def runner():
 class TestHealthRegistry:
     """Every group must be registered; nothing here executes a check."""
 
-    def test_all_17_groups_are_registered(self):
+    def test_all_12_groups_are_registered(self):
         checks, skipped = _collect_health_checks()
         names = {name for name, _ in checks} | set(skipped)
         assert names == EXPECTED_SERVICES
 
-    def test_the_four_completed_groups_are_checked_not_skipped(self):
+    def test_the_completed_groups_are_checked_not_skipped(self):
         checks, skipped = _collect_health_checks()
         checked_names = {name for name, _ in checks}
-        for name in ("git", "shell", "discord", "infisical"):
+        for name in ("git", "shell", "infisical"):
             assert name in checked_names
             assert name not in skipped
 
@@ -79,39 +75,6 @@ class TestGitAndShellHealthWiring:
 
         checks, _ = _collect_health_checks()
         assert dict(checks)["shell"] is shell_health
-
-
-class TestDiscordHealthWiring:
-    """The registered discord check delegates to DiscordClient().health()."""
-
-    def test_discord_check_reports_healthy(self):
-        mock_client = MagicMock()
-        mock_client.health.return_value = {"healthy": True, "username": "copilot-bot"}
-
-        with patch(
-            "copilot_cli.services.discord.client.DiscordClient",
-            return_value=mock_client,
-        ):
-            checks, _ = _collect_health_checks()
-            result = dict(checks)["discord"]()
-
-        assert result == {"healthy": True, "username": "copilot-bot"}
-
-    def test_discord_check_reports_unhealthy_on_error(self):
-        mock_client = MagicMock()
-        mock_client.health.return_value = {
-            "healthy": False,
-            "error": "DISCORD_BOT_TOKEN is not configured.",
-        }
-
-        with patch(
-            "copilot_cli.services.discord.client.DiscordClient",
-            return_value=mock_client,
-        ):
-            checks, _ = _collect_health_checks()
-            result = dict(checks)["discord"]()
-
-        assert result["healthy"] is False
 
 
 class TestInfisicalHealthWiring:
@@ -188,7 +151,7 @@ class TestInfisicalHealthWiring:
 
 
 class TestHealthCommandOutputsAllGroups:
-    def test_json_health_lists_all_17_services(self, runner):
+    def test_json_health_lists_all_12_services(self, runner):
         """`copilot --json health` reports one line per registered group.
 
         Every check function is stubbed so this exercises only the CLI's

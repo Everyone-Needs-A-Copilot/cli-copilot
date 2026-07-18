@@ -23,7 +23,7 @@ def _get_deps():
 def _require_project(state, project: str) -> str:
     project_id = project or state.default_project
     if not project_id:
-        from copilot_cli.services.coolify.output.console import err_console
+        from copilot_cli.services.infisical.output.console import err_console
 
         err_console.print("[error]--project is required.[/error]")
         raise typer.Exit(1)
@@ -46,12 +46,12 @@ def list_secrets(
         if state.is_json():
             # Strip values from JSON output too unless --show-values
             safe = [{k: v for k, v in s.items() if k != "secretValue"} for s in secrets]
-            from copilot_cli.services.coolify.output.json_out import output_data
+            from copilot_cli.services.infisical.output.json_out import output_data
 
             output_data(safe, state.output_format)
             return
 
-        from copilot_cli.services.coolify.output.console import console
+        from copilot_cli.services.infisical.output.console import console
 
         if not secrets:
             console.print("[dim]No secrets found.[/dim]")
@@ -91,14 +91,14 @@ def get_secret(
         secret = run_async(client.get_secret(project_id, env, key, path))
 
         if state.is_json():
-            from copilot_cli.services.coolify.output.json_out import output_data
+            from copilot_cli.services.infisical.output.json_out import output_data
 
             output_data(secret, state.output_format)
             return
 
         from rich.panel import Panel
 
-        from copilot_cli.services.coolify.output.console import console
+        from copilot_cli.services.infisical.output.console import console
 
         lines = [
             f"[label]Key:[/label]     {secret.get('secretKey', key)}",
@@ -142,12 +142,12 @@ def set_secret(
                 raise
 
         if state.is_json():
-            from copilot_cli.services.coolify.output.json_out import output_data
+            from copilot_cli.services.infisical.output.json_out import output_data
 
             output_data({"key": key, "action": action}, state.output_format)
             return
 
-        from copilot_cli.services.coolify.output.console import console
+        from copilot_cli.services.infisical.output.console import console
 
         console.print(f"[success]Secret {action}:[/success] {key}")
     except SystemExit:
@@ -177,12 +177,12 @@ def delete_secret(
         run_async(client.delete_secret(project_id, env, key, path))
 
         if state.is_json():
-            from copilot_cli.services.coolify.output.json_out import output_data
+            from copilot_cli.services.infisical.output.json_out import output_data
 
             output_data({"key": key, "deleted": True}, state.output_format)
             return
 
-        from copilot_cli.services.coolify.output.console import console
+        from copilot_cli.services.infisical.output.console import console
 
         console.print(f"[success]Secret deleted:[/success] {key}")
     except (SystemExit, typer.Abort):

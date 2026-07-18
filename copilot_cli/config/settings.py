@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import json
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,8 +15,8 @@ def _find_env_file() -> Path:
     2. Walk up from CWD, stopping at project root markers
     3. Standard machine-agnostic user config locations ($HOME-relative, so they
        are identical on every machine and carry no hardcoded absolute paths).
-       This is what lets a Discord away-mode hook running in any project find
-       the shared copilot config without a baked path.
+       This is what lets a hook or script running in any project subdirectory
+       find the shared copilot config without a baked path.
     4. Fall back to .env in current directory
     """
     import os
@@ -62,10 +60,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- N8N ---
-    n8n_base_url: str = ""
-    n8n_api_key: str = ""
-
     # --- Git ---
     git_user_name: str = "copilot"
     git_user_email: str = "dev@example.com"
@@ -77,36 +71,15 @@ class Settings(BaseSettings):
     shell_scripts_path: str = ""
     shell_timeout: int = 3600
 
-    # --- NocoDB ---
-    nocodb_url: str = ""
-    nocodb_api_key: str = ""
-    nocodb_base_id: str = ""
-
     # --- PostgreSQL ---
+    # nocodb_database_url / n8n_database_url are example *logical database
+    # names* for the generic multi-DB feature (like formbricks_database_url,
+    # which has never had a matching CLI service) -- unrelated to any
+    # `copilot <service>` adapter of the same name.
     database_url: str = ""
     nocodb_database_url: str = ""
     n8n_database_url: str = ""
     formbricks_database_url: str = ""
-
-    # --- Brevo ---
-    brevo_api_key: str = ""
-
-    # --- Discord ---
-    discord_bot_token: str = ""
-    discord_webhook_url: str = ""
-    discord_guild_id: str = ""
-    discord_channel_id: str = ""
-    discord_thread_id: str = ""
-    discord_allowed_user_ids: str = ""
-    discord_webhook_username: str = ""
-    discord_webhook_avatar_url: str = ""
-    # COPILOT_DISCORD_WAIT_TIMEOUT — seconds to park the session in away-mode;
-    # 0 = wait forever. Default 0 so "I'm stepping away" remains valid overnight
-    # or across a weekend while the terminal session stays alive.
-    discord_wait_timeout: int = 0
-    # COPILOT_DISCORD_AWAIT_DEFAULT — whether `discord handoff` arms await-mode
-    # automatically.  Default False for backward compatibility.
-    discord_await_default: bool = False
 
     # --- Filesystem ---
     allowed_volumes: str = "/tmp"
@@ -131,22 +104,8 @@ class Settings(BaseSettings):
     # --- General ---
     log_level: str = "info"
 
-    def get_brevo_api_key(self) -> str:
-        """Decode base64-wrapped Brevo API key if needed."""
-        if not self.brevo_api_key:
-            return ""
-        try:
-            decoded = base64.b64decode(self.brevo_api_key).decode()
-            parsed = json.loads(decoded)
-            return parsed.get("api_key", self.brevo_api_key)
-        except Exception:
-            return self.brevo_api_key
-
     def get_allowed_volumes(self) -> list[str]:
         return [v.strip() for v in self.allowed_volumes.split(",") if v.strip()]
-
-    def get_discord_allowed_user_ids(self) -> list[str]:
-        return [v.strip() for v in self.discord_allowed_user_ids.split(",") if v.strip()]
 
     def get_backup_dir(self) -> Path:
         """Return ``backup_dir`` as an expanded ``Path``. Does not create it."""

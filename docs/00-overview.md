@@ -8,7 +8,9 @@ last-updated: 2026-02-21
 
 ## What It Is
 
-CLI Copilot is a unified Python command-line tool providing 17 service integrations under a single `copilot` command. <!-- claim-check: cli-copilot-service-count --> It gives every service the same uniform façade — one grammar, one `--json` contract, one portable `.env` — instead of a bespoke MCP server or client per service. Whether that one-grammar/portable approach beats per-service MCP servers on token economics is a measured claim, not an assumed one: internal benchmarking found the advantage is real but conditional on shipping the CLI's usage prose (agents need to be told the grammar exists before they use it over ad hoc tool calls).
+CLI Copilot is a unified Python command-line tool providing 12 service integrations under a single `copilot` command. <!-- claim-check: cli-copilot-service-count --> It gives every service the same uniform façade — one grammar, one `--json` contract, one portable `.env` — instead of a bespoke MCP server or client per service. Whether that one-grammar/portable approach beats per-service MCP servers on token economics is a measured claim, not an assumed one: internal benchmarking found the advantage is real but conditional on shipping the CLI's usage prose (agents need to be told the grammar exists before they use it over ad hoc tool calls).
+
+This repo is the **public foundation**: only generic, broadly-reusable service adapters, never anything specific to one company or product. Five org-specific vendor adapters that used to live here (`crm`/NocoDB, `brevo`, `n8n`, `coolify`, `discord`) have moved to the org-specific `-internal` tier. `uspto` and `infisical` are kept as the two worked-example adapters for adopters scaffolding a new one — see the README's "Reference adapters" note.
 
 ## Architecture
 
@@ -22,14 +24,12 @@ CLI Copilot is a unified Python command-line tool providing 17 service integrati
 |----------|----------|
 | Local Infrastructure | git, docker, shell, filesystem, system-services |
 | Databases | postgresql (multi-DB pooling) |
-| API Integrations | nocodb, brevo, n8n |
 | Analytics & Monitoring | document, bi, monitoring |
-| Infrastructure | coolify, infisical (secrets) |
+| Infrastructure | infisical (secrets) |
 | Skill Runtime | skill (discovery, execution, verification, auditing) |
 | Research & Intelligence | uspto |
-| Handoff | discord |
 
-> **Note:** 16 of 17 services use Pydantic Settings (`.env`). Coolify uses its own three-layer config: CLI flags → environment variables → TOML file (`~/.coolify-cli/config.toml`). <!-- claim-check: cli-copilot-service-count -->
+> **Note:** All 12 shipped services use Pydantic Settings (`.env`). (Coolify's own three-layer config — CLI flags → environment variables → TOML file — was the one tolerated exception; it moved to the `-internal` tier along with the adapter itself.) <!-- claim-check: cli-copilot-service-count -->
 
 ### Package Structure
 

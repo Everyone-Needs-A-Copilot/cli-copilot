@@ -2,13 +2,13 @@
 
 ## What This Repository Does
 
-CLI Copilot is a standalone Python CLI tool with 17 service integrations. It provides the `copilot` command for managing infrastructure, APIs, databases, monitoring, and skill execution from any terminal.
+CLI Copilot is a standalone Python CLI tool with 12 service integrations. It provides the `copilot` command for managing infrastructure, APIs, databases, monitoring, and skill execution from any terminal. This repo is the public foundation; five org-specific vendor adapters (`crm`/NocoDB, `brevo`, `n8n`, `coolify`, `discord`) have moved to the org-specific `-internal` tier. `uspto` and `infisical` are kept as the two worked-example adapters — see README's "Reference adapters" note.
 
 ## Architecture
 
 ```
 copilot_cli/
-├── main.py          # Typer app — registers 17 subcommands + health
+├── main.py          # Typer app — registers 12 subcommands + health
 ├── config/
 │   └── settings.py  # Pydantic Settings — loads .env automatically
 ├── shared/
@@ -33,9 +33,8 @@ copilot_cli/
 
 ### Service Patterns
 
-- **Class-based clients** (10 services): git, docker, postgresql, nocodb, brevo, n8n, skill, infisical, discord, uspto — instantiated via `_client()` factory with lazy init
+- **Class-based clients** (6 services): git, docker, postgresql, skill, infisical, uspto — instantiated via `_client()` factory with lazy init
 - **Module-level clients** (6 services): shell, filesystem, system_services, document, bi, monitoring — plain functions using `get_settings()`
-- **Special case** (1 service): coolify — uses its own TOML + env + CLI-flag config layer (not Pydantic Settings)
 
 ### Skill Runtime (Model 2)
 

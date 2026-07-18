@@ -11,7 +11,7 @@ last-updated: 2026-02-21
 
 ## Purpose
 
-Multi-database PostgreSQL operations with connection pooling. Supports 4 named databases: main, nocodb, n8n, formbricks.
+Multi-database PostgreSQL operations with connection pooling. Supports 4 named databases: main, nocodb, n8n, formbricks. These are example *logical database names* for the generic multi-DB feature — they are not tied to any `copilot <service>` adapter of the same name (`formbricks` in particular has never had a matching CLI service; `nocodb`/`n8n` don't either, now that those adapters have moved to the org-specific `-internal` tier).
 
 ## Commands
 
@@ -60,13 +60,13 @@ Checks: Tests connection to each configured database and reports status.
 
 ## Database Transfers
 
+> **Coolify dependency (public foundation).** `db dump`, `db pull`, `db transition` (remote source), and `db remote-query` below resolve a remote database through a Coolify-shaped adapter at `copilot_cli/services/coolify/`. This public foundation does not ship one — Coolify was an org-specific example, not a generic adapter, and now lives in the `-internal` tier — so these four commands raise a clear `CopilotError` (not a raw traceback) until you vendor a compatible adapter at that same import path (see `_resolve_remote_db` / `_ssh_target_from_coolify_settings` / `_open_tunnel_or_raise` in `copilot_cli/services/postgresql/commands.py`). Every other `db` command (query, tables, columns, relationships, schema, explain, stats, backup, vacuum, restore, health) works against local `*_DATABASE_URL` connections with no external dependency.
+
 ### Destructive-operations policy
 
 Destructive SQL (DROP / TRUNCATE / DELETE FROM / ALTER … DROP) is **never allowed on remote or tunneled-remote databases**. On a local database these operations require an explicit per-call confirmation token that equals the database's short-name.
 
 Rationale: this tool is not authorised to delete production data. Destructive operations on remote databases are refused unconditionally at the client layer, regardless of credentials or flags.
-
-The same policy applies to `copilot coolify db delete` and `copilot coolify backup delete` — both are hard-blocked with a refusal message.
 
 ### What counts as "local"
 
