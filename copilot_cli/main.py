@@ -51,32 +51,16 @@ def main(
 
 
 # --- Register service subcommands ---
+#
+# Manifest-driven: `resolve_cli_services()` returns the base 12 services in
+# this same order when no `copilot.layers.yml` resolves a `cli` chain (the
+# Phase-1 back-compat fast path -- see services/_loader.py), or the composed
+# base+overlay set once a tier adopts/provides/overrides a service.
 
-from .services.bi.commands import app as bi_app
-from .services.docker.commands import app as docker_app
-from .services.document.commands import app as docs_app
-from .services.filesystem.commands import app as fs_app
-from .services.git.commands import app as git_app
-from .services.infisical.main import app as infisical_app
-from .services.monitoring.commands import app as monitoring_app
-from .services.postgresql.commands import app as db_app
-from .services.shell.commands import app as shell_app
-from .services.skill.commands import app as skill_app
-from .services.system_services.commands import app as services_app
-from .services.uspto.commands import app as uspto_app
+from .services._loader import resolve_cli_services
 
-app.add_typer(git_app, name="git", help="Git repository operations")
-app.add_typer(docker_app, name="docker", help="Docker container management")
-app.add_typer(shell_app, name="shell", help="Shell command execution")
-app.add_typer(fs_app, name="fs", help="File system operations")
-app.add_typer(services_app, name="services", help="System service management (launchctl)")
-app.add_typer(db_app, name="db", help="PostgreSQL database operations")
-app.add_typer(docs_app, name="docs", help="Document management")
-app.add_typer(bi_app, name="bi", help="Business intelligence")
-app.add_typer(monitoring_app, name="monitoring", help="System monitoring")
-app.add_typer(infisical_app, name="infisical", help="Infisical secrets management")
-app.add_typer(skill_app, name="skill", help="Skill runtime — discover, execute, verify skills")
-app.add_typer(uspto_app, name="uspto", help="USPTO patent and trademark data access")
+for _svc in resolve_cli_services():
+    app.add_typer(_svc.app, name=_svc.name, help=_svc.help)
 
 
 # --- Top-level health command ---
@@ -228,3 +212,82 @@ def health() -> None:
         print_health(name, False, skipped=True)
 
     console.print()
+
+
+# --- Tier-inheritance introspection (WS-A: `copilot --json layers`) ---
+
+LAYERS_SCHEMA_VERSION = 1
+
+
+def _build_layers_payload() -> dict:
+    """Build the `copilot layers` payload -- parse-not-compute friendly for
+    Control Tower (invariant #1): every field here is already resolved by
+    `config.layers`/`services._loader`, never recomputed by a renderer.
+
+    See `docs/schemas/layers.schema.json` for the frozen JSON Schema this
+    payload conforms to.
+    """
+    from .config.layers import find_layers_manifest, resolve_cli_layer_chain
+    from .services._loader import resolve_cli_services
+
+    manifest_path = find_layers_manifest()
+    chain = resolve_cli_layer_chain()
+    services = resolve_cli_services()
+
+    return {
+        "schema_version": LAYERS_SCHEMA_VERSION,
+        "component": "cli",
+        "manifest": {
+            "path": str(manifest_path) if manifest_path else None,
+            "cli_layers_resolved": chain is not None,
+        },
+        "chain": [
+            {
+                "id": layer.id,
+                "role": layer.role,
+                "rank": layer.rank,
+                "repo": layer.repo,
+                "ref": layer.ref,
+                "auth": layer.auth,
+                "unit": layer.unit,
+            }
+            for layer in (chain or [])
+        ],
+        "services": [
+            {"name": svc.name, "help": svc.help, "tier": svc.tier, "mode": svc.mode}
+            for svc in services
+        ],
+    }
+
+
+@app.command()
+def layers() -> None:
+    """Show the resolved CLI tier chain and per-service provenance.
+
+    With no `copilot.layers.yml` resolving a `component: cli` chain, this
+    reports an empty chain and the base 12 services, each `tier:
+    foundation, mode: base` -- the inert Phase-1 state. Control Tower calls
+    this with `--json` and renders it (invariant #1: parse, never compute).
+    """
+    from .shared.output import is_json_mode, print_json
+
+    payload = _build_layers_payload()
+
+    if is_json_mode():
+        print_json(payload)
+        return
+
+    if payload["manifest"]["cli_layers_resolved"]:
+        console.print(f"[bold]CLI tier chain[/bold] (manifest: {payload['manifest']['path']})\n")
+        for layer in payload["chain"]:
+            console.print(f"  rank {layer['rank']:>4}  {layer['id']} ({layer['role']})")
+    else:
+        console.print("[bold]CLI tier chain[/bold]\n")
+        console.print(
+            "[dim]No copilot.layers.yml resolved a 'cli' component chain -- "
+            "running the base foundation only.[/dim]"
+        )
+    console.print()
+    for svc in payload["services"]:
+        provenance = svc["tier"] if svc["mode"] == "base" else f"{svc['tier']} ({svc['mode']})"
+        console.print(f"  {svc['name']:.<20s} {provenance}")

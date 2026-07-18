@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings.sources import DotEnvSettingsSource
+
+from copilot_cli.config.layers import CliLayer, load_tier_overlay, resolve_cli_layer_chain
+from copilot_cli.config.secrets_ladder import resolve_secret
 
 
 def _find_env_file() -> Path:
@@ -53,12 +57,91 @@ def _find_env_file() -> Path:
     return Path(".env")
 
 
+class SecretRefSource(PydanticBaseSettingsSource):
+    """Resolves declared `requires_secret: <NAME>` refs via the credential
+    ladder (`secrets_ladder.resolve_secret`) -- the single place a secret
+    *value* enters `Settings` in the layered path. Only engaged when
+    `settings_customise_sources` builds the layered source tuple (i.e. a
+    `copilot.layers.yml` with `component: cli` entries resolves); the
+    manifest-absent fast path never constructs this class.
+
+    A field only resolves through this source if some tier's
+    `cli.overlay.yml` declares it in `requires_secret` (matched
+    case-insensitively: `USPTO_CLI_API_KEY` -> `uspto_cli_api_key`). Every
+    other field is left untouched here, falling through to the tier `.env`
+    sources ahead of it in the tuple.
+
+    Fail-closed by construction: a declared secret that misses every ladder
+    rung raises `SecretResolutionError` (via `resolve_secret`) instead of
+    silently leaving the field at its `""` default -- see
+    `secrets_ladder.py` and red-team §6.3 ("no silent no-op").
+    """
+
+    def __init__(self, settings_cls: type[BaseSettings], chain: list[CliLayer]):
+        super().__init__(settings_cls)
+        self._chain = chain
+        self._secret_names = self._collect_secret_names(chain)
+
+    @staticmethod
+    def _collect_secret_names(chain: list[CliLayer]) -> set[str]:
+        names: set[str] = set()
+        for layer in chain:
+            overlay = load_tier_overlay(layer.overlay_path)
+            names.update(overlay.all_requires_secret())
+        return names
+
+    def get_field_value(self, field, field_name: str) -> tuple[object, str, bool]:
+        env_name = field_name.upper()
+        if env_name not in self._secret_names:
+            return None, field_name, False
+        return resolve_secret(env_name, self._chain), field_name, False
+
+    def __call__(self) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for field_name, field in self.settings_cls.model_fields.items():
+            value, key, is_complex = self.get_field_value(field, field_name)
+            if value is None:
+                continue
+            result[key] = self.prepare_field_value(field_name, field, value, is_complex)
+        return result
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_find_env_file()),
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Layer the CLI tier chain into settings resolution -- gated
+        entirely behind `resolve_cli_layer_chain()` (design doc §1.2, D5).
+
+        No manifest resolves (or none of its entries are `component: cli`)
+        -> returns the IDENTICAL source tuple as pre-Phase-1, so
+        `_find_env_file()` (baked into `model_config.env_file` above) is
+        reached completely unchanged and `COPILOT_ENV_FILE` keeps working
+        exactly as it always has. This is the back-compat fast path the
+        parity fitness test gates.
+        """
+        chain = resolve_cli_layer_chain()
+        if chain is None:
+            return (init_settings, env_settings, dotenv_settings, file_secret_settings)
+
+        # ---- LAYERED PATH: highest precedence FIRST (personal ... foundation) ----
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings]
+        for layer in chain:
+            sources.append(DotEnvSettingsSource(cls, env_file=layer.env_path))
+        sources.append(SecretRefSource(cls, chain))
+        return tuple(sources)
 
     # --- Git ---
     git_user_name: str = "copilot"

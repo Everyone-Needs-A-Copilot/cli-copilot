@@ -44,24 +44,52 @@ def _no_remote_adapter_error() -> CopilotError:
 
     ``db dump`` / ``db pull`` / ``db transition`` (remote source) / ``db
     remote-query`` resolve a remote database through a Coolify-shaped adapter
-    at ``copilot_cli.services.coolify``. This public foundation does not ship
-    one -- Coolify was an org-specific example, not a generic adapter, and now
-    lives in the ``-internal`` tier. Vendor a compatible adapter at that same
-    import path (same shape as ``core.api_client``, ``core.config``,
-    ``core.resolver``, ``core.tunnel``), or use the local-only ``db``
-    commands instead (query, tables, columns, relationships, schema, explain,
-    stats, backup, vacuum, restore, health).
+    looked up by name via the service loader (``load_service("coolify")``,
+    tier-inheritance design §2.5). This public foundation does not ship one
+    -- Coolify was an org-specific example, not a generic adapter, and now
+    lives in the ``-internal`` tier, ADDED there as a ``provides: coolify``
+    entry in that tier's ``cli.overlay.yml`` (same shape as
+    ``core.api_client``, ``core.config``, ``core.resolver``,
+    ``core.tunnel``). Use the local-only ``db`` commands instead (query,
+    tables, columns, relationships, schema, explain, stats, backup, vacuum,
+    restore, health) if no such tier is adopted.
     """
     return CopilotError(
         "Remote database operations need a Coolify-shaped adapter that isn't "
         "included in this public foundation.",
         service="postgresql",
         hint=(
-            "See docs/services/06-postgresql.md § Coolify integration -- "
-            "vendor a compatible adapter at copilot_cli/services/coolify/, or "
+            "See docs/services/06-postgresql.md § Coolify integration -- adopt "
+            "a tier that provides a 'coolify' service (cli.overlay.yml), or "
             "use a local-only db command instead."
         ),
     )
+
+
+def _load_coolify_adapter():
+    """Resolve the optional Coolify remote-database adapter via the service
+    loader (design §2.5): a tier ADDS a `coolify` service in its
+    `cli.overlay.yml`, and this base `db` command discovers it by name --
+    no hardcoded import path to a package this public foundation doesn't
+    ship.
+
+    Returns the four submodules the Coolify-shaped adapter contract
+    requires (``core.api_client``, ``core.config``, ``core.resolver``,
+    ``core.tunnel`` -- lazily, only ``main`` is imported eagerly here since
+    every caller needs ``run_async``). Raises the shared
+    ``_no_remote_adapter_error()`` if no tier provides ``coolify``, or if
+    the resolved service doesn't match the expected shape.
+    """
+    from copilot_cli.services._loader import load_service
+
+    svc = load_service("coolify")
+    if svc is None:
+        raise _no_remote_adapter_error()
+    try:
+        main = svc.submodule("main")
+    except ImportError as exc:
+        raise _no_remote_adapter_error() from exc
+    return svc, main
 
 
 def _resolve_remote_db(coolify_query: str) -> dict:
@@ -69,29 +97,30 @@ def _resolve_remote_db(coolify_query: str) -> dict:
 
     Returns the dict directly from the Coolify API. Raises on failure.
     """
+    svc, main = _load_coolify_adapter()
     try:
-        from copilot_cli.services.coolify.core.api_client import CoolifyClient
-        from copilot_cli.services.coolify.core.config import require_settings as require_cf
-        from copilot_cli.services.coolify.core.resolver import resolve_database
-        from copilot_cli.services.coolify.main import run_async
+        api_client = svc.submodule("core.api_client")
+        config = svc.submodule("core.config")
+        resolver = svc.submodule("core.resolver")
     except ImportError as exc:
         raise _no_remote_adapter_error() from exc
 
-    cf = require_cf()
-    cl = CoolifyClient(cf.api.base_url, cf.api.access_token)
-    uuid = run_async(resolve_database(cl, coolify_query))
-    return run_async(cl.get_database(uuid))
+    cf = config.require_settings()
+    cl = api_client.CoolifyClient(cf.api.base_url, cf.api.access_token)
+    uuid = main.run_async(resolver.resolve_database(cl, coolify_query))
+    return main.run_async(cl.get_database(uuid))
 
 
 def _ssh_target_from_coolify_settings():
     """Build an SSHTarget from the Coolify CLI's [ssh] config block."""
+    svc, _main = _load_coolify_adapter()
     try:
-        from copilot_cli.services.coolify.core.config import load_settings as load_cf
+        config = svc.submodule("core.config")
     except ImportError as exc:
         raise _no_remote_adapter_error() from exc
     from copilot_cli.services.postgresql.transfer import SSHTarget
 
-    cf = load_cf()
+    cf = config.load_settings()
     if not cf.ssh.host:
         raise CopilotError(
             "No SSH host configured for Coolify. Set [ssh] in ~/.coolify-cli/config.toml "
@@ -103,12 +132,14 @@ def _ssh_target_from_coolify_settings():
 
 
 def _open_tunnel_or_raise():
-    """Import Coolify's SSH tunnel opener, or raise the shared adapter error."""
+    """Look up Coolify's SSH tunnel opener via the loader, or raise the
+    shared adapter error."""
+    svc, _main = _load_coolify_adapter()
     try:
-        from copilot_cli.services.coolify.core.tunnel import open_tunnel
+        tunnel = svc.submodule("core.tunnel")
     except ImportError as exc:
         raise _no_remote_adapter_error() from exc
-    return open_tunnel
+    return tunnel.open_tunnel
 
 
 # ------------------------------------------------------------------

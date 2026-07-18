@@ -7,15 +7,22 @@ file, with its own exception hierarchy, or with undocumented config, and
 nothing would fail. Per the ecosystem rule "a rule that isn't checked
 mechanically is a wish," this file makes each non-negotiable a test.
 
-Service discovery is never hardcoded: `discover_service_groups()` parses
-`copilot_cli/main.py`'s own `app.add_typer(...)` registrations via `ast`,
-so adding or removing a service updates this suite's coverage on the next
-run with zero edits here. The *service* identity used throughout is the
-module name under `copilot_cli/services/` (e.g. "postgresql"), not the CLI
-verb it's registered under (e.g. "db") — confirmed against
-`_collect_health_checks()` in `main.py`, whose check names are always the
-module name, and against `docs/services/*.md` and
-`tests/test_services/test_*.py`, which are both named after the module.
+Service discovery is never hardcoded: `discover_service_groups()` reads
+`services._loader.resolve_cli_services()` — the same manifest-driven
+resolver `main.py` itself registers from (see the CLI tier-inheritance
+Phase-1 change, `docs/03-tier-inheritance.md`) — so adding or removing a
+service updates this suite's coverage on the next run with zero edits
+here. Pre-Phase-1 this discovered `main.py`'s hardcoded `app.add_typer(...)`
+calls via `ast`; now that registration is itself loader-driven, reading the
+loader's resolved set is the accurate "never hardcoded" source, and
+additionally picks up any tier-adopted/overridden/added service once a
+`copilot.layers.yml` exists (today: none does, so this always yields the
+base 12). The *service* identity used throughout is the module name under
+`copilot_cli/services/` (e.g. "postgresql"), not the CLI verb it's
+registered under (e.g. "db") — confirmed against `_collect_health_checks()`
+in `main.py`, whose check names are always the module name, and against
+`docs/services/*.md` and `tests/test_services/test_*.py`, which are both
+named after the module.
 
 Each (service, criterion) pair is its own parametrized test case, so a
 `pytest -v` (or the failure list from a plain run) IS the scorecard: one
@@ -51,7 +58,6 @@ from copilot_cli.main import _collect_health_checks, app
 from copilot_cli.shared.output import set_json_mode
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MAIN_PY = REPO_ROOT / "copilot_cli" / "main.py"
 SERVICES_DIR = REPO_ROOT / "copilot_cli" / "services"
 TEST_SERVICES_DIR = REPO_ROOT / "tests" / "test_services"
 DOCS_SERVICES_DIR = REPO_ROOT / "docs" / "services"
@@ -65,40 +71,17 @@ ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 def discover_service_groups() -> dict[str, str]:
     """Return {service_module_name: cli_command_name} for every service
-    registered in main.py, parsed via ast (never hardcoded).
+    `main.py` actually registers, read from the same
+    `resolve_cli_services()` loader `main.py` itself iterates (never
+    hardcoded here, and never re-parses `main.py`'s now-generic
+    registration loop).
     """
-    tree = ast.parse(MAIN_PY.read_text(), filename=str(MAIN_PY))
-
-    alias_to_module: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("services."):
-            parts = node.module.split(".")
-            if len(parts) >= 2:
-                mod = parts[1]
-                for alias in node.names:
-                    if alias.name == "app":
-                        alias_to_module[alias.asname or alias.name] = mod
+    from copilot_cli.services._loader import resolve_cli_services
 
     module_to_command: dict[str, str] = {}
-    for node in ast.walk(tree):
-        is_add_typer = (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "add_typer"
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "app"
-        )
-        if not is_add_typer or not node.args or not isinstance(node.args[0], ast.Name):
-            continue
-        mod = alias_to_module.get(node.args[0].id)
-        if mod is None:
-            continue
-        cmd_name = mod
-        for kw in node.keywords:
-            if kw.arg == "name" and isinstance(kw.value, ast.Constant):
-                cmd_name = kw.value.value
-        module_to_command[mod] = cmd_name
-
+    for svc in resolve_cli_services():
+        module = svc.package.rsplit(".", 1)[-1]
+        module_to_command[module] = svc.name
     return module_to_command
 
 
