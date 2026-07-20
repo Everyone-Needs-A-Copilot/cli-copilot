@@ -27,6 +27,12 @@ def _clear_cache():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_token_cache(tmp_path, monkeypatch):
+    """Keep the on-disk token cache out of the real ~/.cache during tests."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+
+@pytest.fixture(autouse=True)
 def _no_real_keychain(monkeypatch):
     """Force bootstrap creds to come from the layer `.env`, never this
     machine's real keychain -- deterministic across dev boxes."""
@@ -65,6 +71,7 @@ class _FakeClient:
 
     def __init__(self, base_url, client_id, client_secret, timeout=30.0):
         self.base_url = base_url
+        self._token = None  # mirrors the real client; _fetch_all reads/sets it
 
     async def list_secrets(self, workspace, environment, secret_path="/"):
         type(self).calls += 1
@@ -184,3 +191,37 @@ class TestNearestWins:
         assert any(key[1] == "ws-123" for key in ms._SECRET_CACHE)
         assert not any(key[1] == "ws-foundation" for key in ms._SECRET_CACHE)
         assert fake.calls == 1
+
+
+class TestTokenCache:
+    @staticmethod
+    def _jwt(exp):
+        import base64
+        import json
+
+        payload = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=")
+        return f"hdr.{payload}.sig"
+
+    def test_save_then_load_roundtrip(self):
+        import time
+
+        tok = self._jwt(time.time() + 3600)
+        ms._save_cached_token("https://x", "cid", tok)
+        assert ms._load_cached_token("https://x", "cid") == tok
+
+    def test_expired_token_not_returned(self):
+        import time
+
+        ms._save_cached_token("https://x", "cid", self._jwt(time.time() - 10))
+        assert ms._load_cached_token("https://x", "cid") is None
+
+    def test_missing_token_is_none(self):
+        assert ms._load_cached_token("https://never", "nope") is None
+
+    def test_cache_file_is_private(self):
+        import stat
+        import time
+
+        ms._save_cached_token("https://x", "cid", self._jwt(time.time() + 3600))
+        f = ms._token_cache_file("https://x", "cid")
+        assert stat.S_IMODE(f.stat().st_mode) == 0o600

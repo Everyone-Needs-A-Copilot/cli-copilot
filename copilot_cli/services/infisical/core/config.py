@@ -57,10 +57,41 @@ def find_env_file(search_root: Path | None = None) -> Path | None:
 # ---------------------------------------------------------------------------
 
 
+def _keychain_lookup(name: str) -> str:
+    """Best-effort read of *name* from the per-user OS keychain, via the shared
+    credential ladder's keychain rung. Returns ``""`` on any miss so callers can
+    treat it as 'not configured' without a try/except."""
+    try:
+        from copilot_cli.config.secrets_ladder import _rung_keychain, _SecretRungUnavailable
+
+        try:
+            return _rung_keychain(name, [])
+        except _SecretRungUnavailable:
+            return ""
+    except Exception:
+        return ""
+
+
 def load_settings() -> InfisicalSettings:
-    """Load settings, merging env file and environment variables."""
+    """Load settings, merging env file and environment variables.
+
+    Keychain fallback for the machine-identity bootstrap credentials
+    (invariant #6): `INFISICAL_CLIENT_ID` / `_SECRET` are the one secret pair
+    that cannot live in the managed store they unlock (bootstrap paradox), so
+    when they are absent from the environment / `.env` they are resolved from
+    the per-user OS keychain -- the same rung the credential ladder uses. An
+    explicit env/`.env` value always wins; the keychain only fills a gap.
+    """
     env_file = find_env_file()
-    return InfisicalSettings(_env_file=env_file)
+    settings = InfisicalSettings(_env_file=env_file)
+    if not settings.client_id or not settings.client_secret:
+        client_id = settings.client_id or _keychain_lookup("INFISICAL_CLIENT_ID")
+        client_secret = settings.client_secret or _keychain_lookup("INFISICAL_CLIENT_SECRET")
+        if client_id != settings.client_id or client_secret != settings.client_secret:
+            settings = settings.model_copy(
+                update={"client_id": client_id, "client_secret": client_secret}
+            )
+    return settings
 
 
 def require_settings() -> InfisicalSettings:

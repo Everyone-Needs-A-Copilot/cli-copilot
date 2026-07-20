@@ -31,6 +31,11 @@ ladder catches to try the next rung (keychain, …). The ladder's terminal
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+import os
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -67,6 +72,69 @@ _STORE_TIMEOUT = 6.0
 # One `list_secrets` amortises across all `requires_secret` fields resolved in a
 # single command; cleared naturally when the process exits.
 _SECRET_CACHE: dict[tuple[str, str, str, str], dict[str, str]] = {}
+
+# Cross-process cache of the short-lived Infisical access token (NOT secret
+# values -- those are never written to disk). Avoids re-authenticating on every
+# CLI invocation, which is both a latency cost and a real reliability risk:
+# bursty callers (e.g. the Discord bridge firing per turn) can otherwise trip
+# Infisical's auth rate limit and fail-closed. The token file is mode 0600 under
+# the per-user cache dir; a stale token is detected and re-minted transparently.
+_TOKEN_SKEW_SECONDS = 60
+
+
+def _token_cache_dir() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".cache"
+    d = base / "copilot" / "infisical"
+    d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return d
+
+
+def _token_cache_file(base_url: str, client_id: str) -> Path:
+    # Filename is a hash of endpoint+identity so it neither collides across
+    # tiers/identities nor leaks the identity in the path.
+    digest = hashlib.sha256(f"{base_url}|{client_id}".encode()).hexdigest()[:32]
+    return _token_cache_dir() / f"{digest}.json"
+
+
+def _token_exp(token: str) -> float:
+    from copilot_cli.services.infisical.core.api_client import _decode_jwt_payload
+
+    exp = _decode_jwt_payload(token).get("exp")
+    try:
+        return float(exp)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _load_cached_token(base_url: str, client_id: str) -> str | None:
+    try:
+        data = json.loads(_token_cache_file(base_url, client_id).read_text())
+    except (OSError, ValueError):
+        return None
+    token = data.get("token")
+    exp = data.get("exp", 0)
+    if token and isinstance(exp, (int, float)) and exp - time.time() > _TOKEN_SKEW_SECONDS:
+        return str(token)
+    return None
+
+
+def _save_cached_token(base_url: str, client_id: str, token: str) -> None:
+    path = _token_cache_file(base_url, client_id)
+    try:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"token": token, "exp": _token_exp(token)}))
+        tmp.chmod(0o600)
+        tmp.replace(path)
+    except OSError:
+        pass  # cache is best-effort; a write failure just means re-auth next time
+
+
+def _clear_cached_token(base_url: str, client_id: str) -> None:
+    try:
+        _token_cache_file(base_url, client_id).unlink()
+    except OSError:
+        pass
 
 
 def _parse_env_keys(env_path, keys: set[str]) -> dict[str, str]:
@@ -150,8 +218,26 @@ async def _fetch_all(base_url: str, client_id: str, client_secret: str,
     except (AuthenticationError, InfisicalConnectionError) as exc:
         raise StoreUnavailable(f"store client init failed: {exc}") from exc
 
+    cached = _load_cached_token(base_url, client_id)
+    if cached:
+        client._token = cached  # skip the auth round-trip; verified below by use
+
     try:
-        items = await client.list_secrets(workspace, environment, secret_path)
+        try:
+            items = await client.list_secrets(workspace, environment, secret_path)
+        except AuthenticationError:
+            # No/stale cached token -> authenticate fresh exactly once and
+            # persist the new token for the next process, then retry the read.
+            client._token = None
+            _clear_cached_token(base_url, client_id)
+            await client.authenticate()
+            _save_cached_token(base_url, client_id, client._token or "")
+            items = await client.list_secrets(workspace, environment, secret_path)
+        else:
+            # list_secrets auto-authenticates when no token was cached; persist
+            # whatever token the client now holds so the next process reuses it.
+            if not cached and client._token:
+                _save_cached_token(base_url, client_id, client._token)
     except (APIError, AuthenticationError, InfisicalConnectionError) as exc:
         raise StoreUnavailable(f"store read failed: {exc}") from exc
     finally:
