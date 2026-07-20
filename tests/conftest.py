@@ -3,6 +3,17 @@
 from __future__ import annotations
 
 import os
+
+# Isolate the tier manifest for the test session BEFORE anything imports
+# `copilot_cli.main` (which discovers services via the loader at import time).
+# A developer with a live org overlay + ~/.config/copilot/copilot.layers.yml
+# installed must still see the FOUNDATION's own services under test, not the
+# composed org+foundation chain -- otherwise soul-conformance discovers the
+# overlay's org-only services and fails on their absent foundation docs/tests.
+# In clean CI no manifest exists, so this is a no-op there. Tests that exercise
+# tiering set COPILOT_LAYERS_FILE explicitly (monkeypatch) and override this.
+os.environ.setdefault("COPILOT_LAYERS_FILE", "/nonexistent/tier-isolation-for-tests.yml")
+
 from unittest.mock import MagicMock, patch
 
 import pytest
