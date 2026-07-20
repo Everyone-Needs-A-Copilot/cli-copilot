@@ -16,6 +16,13 @@ downward"):
 - A mirror whose git working tree is DIRTY (staged, modified, untracked, or
   conflicted changes -- see `_is_dirty`) is HELD: zero writes, reported, and
   skipped. Only a clean OR absent mirror may be touched.
+- A mirror that is working-tree CLEAN but carries unpushed local commits
+  (`status["ahead"] > 0`) is likewise HELD. A read-only consumer mirror
+  should never have local commits; if one does, it must be treated as a
+  personal tree and never pulled, even though `_is_dirty` alone would not
+  catch it -- pulling could start a merge/rebase against a diverged remote
+  and leave the tree mid-conflict (F5). `behind` alone never holds: that is
+  the ordinary "remote has new commits" case pull exists to fast-forward.
 - This gate is fail-SAFE: if a mirror's git status can't be determined at all
   (e.g. `GitClient.status()` raises because the path exists but is not a git
   repository), it is treated as dirty and HELD -- never written to on the
@@ -38,9 +45,11 @@ from copilot_cli.services.git.client import GitClient
 _RANGE_PREFIXES = ("^", "~")
 _RANGE_OPERATORS = ("<", ">", "||")
 
-# `GitClient.status()` fields that indicate the working tree is dirty. `ahead`/
-# `behind`/`tracking`/`current` describe divergence from the remote, not local
-# changes, and are never grounds to withhold a pull.
+# `GitClient.status()` fields that indicate the working tree is dirty.
+# `tracking`/`current` are purely descriptive. `behind` alone is never grounds
+# to withhold a pull -- that's the ordinary case pull is meant to handle.
+# `ahead` is handled separately (see `_has_unpushed_commits`): a clean tree
+# with unpushed local commits still holds, per the never-destroy gate.
 _DIRTY_STATUS_FIELDS = ("staged", "modified", "not_added", "deleted", "conflicted")
 
 
@@ -60,6 +69,17 @@ def is_semver_range(ref: str) -> bool:
 def _is_dirty(status: dict) -> bool:
     """True if a `GitClient.status()` result reports any local change."""
     return any(status.get(field) for field in _DIRTY_STATUS_FIELDS)
+
+
+def _has_unpushed_commits(status: dict) -> bool:
+    """True if a `GitClient.status()` result reports the branch is ahead of
+    its tracking branch (`ahead` is an int count -- see `GitClient.status`).
+
+    A working-tree-clean mirror can still carry unpushed local commits (e.g.
+    a stray manual commit on a supposedly read-only mirror). A read-only
+    consumer mirror should never have these; if it does, treat it as a
+    personal tree and hold rather than pull (F5)."""
+    return status.get("ahead", 0) > 0
 
 
 @dataclass(frozen=True)
@@ -106,6 +126,9 @@ def sync_layer(layer: CliLayer, git: GitClient | None = None) -> LayerSyncResult
 
         if _is_dirty(status):
             return LayerSyncResult(layer.id, "held", "local changes")
+
+        if _has_unpushed_commits(status):
+            return LayerSyncResult(layer.id, "held", "local commits present")
 
         try:
             git.pull(str(root), branch=layer.ref)

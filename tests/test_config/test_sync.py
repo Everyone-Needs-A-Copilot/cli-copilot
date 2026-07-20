@@ -149,6 +149,54 @@ class TestNeverDestroyGate:
         assert result.action == "held"
         assert before == after
 
+    def test_holds_clean_mirror_with_unpushed_commits_that_would_conflict(
+        self, tmp_path
+    ):
+        """F5: a mirror whose working tree is CLEAN but that carries a local
+        commit unknown to the remote (`ahead > 0`) must be HELD, even though
+        `_is_dirty` alone would say it's clean. A read-only consumer mirror
+        should never have local commits; if the gate didn't catch this, the
+        subsequent pull would try to merge/rebase the local commit against a
+        diverging remote commit, writing conflict markers into the tree and
+        potentially leaving it mid-rebase before erroring -- a write into
+        what could be a personal commit."""
+        remote = _init_remote(tmp_path)
+        layer = _make_layer(tmp_path, _remote_url(remote))
+        git = GitClient()
+
+        cloned = sync_layer(layer, git=git)
+        assert cloned.action == "cloned"
+
+        # A stray local commit lands on the mirror (it should never happen on
+        # a read-only mirror, but the gate must not assume that). Modify the
+        # same line the remote is about to change, so a pull would conflict.
+        (layer.root / "README.md").write_text("locally committed change\n")
+        _run_git("add", "README.md", cwd=layer.root)
+        _run_git("commit", "-q", "-m", "stray local commit", cwd=layer.root)
+
+        # The remote diverges: a new commit touching the same line.
+        (remote / "README.md").write_text("remote diverged change\n")
+        _run_git("add", "README.md", cwd=remote)
+        _run_git("commit", "-q", "-m", "remote diverges", cwd=remote)
+
+        before = _snapshot(layer.root)
+        result = sync_layer(layer, git=git)
+        after = _snapshot(layer.root)
+
+        assert result.action == "held"
+        assert "local commits present" in result.detail
+        assert before == after, "held layer must make zero writes"
+
+        # No conflict markers written into the tracked file.
+        assert (
+            "<<<<<<<" not in (layer.root / "README.md").read_text()
+        ), "must not have started a merge/rebase that wrote conflict markers"
+
+        # No mid-rebase/mid-merge state left behind in .git.
+        git_dir = layer.root / ".git"
+        assert not list(git_dir.glob("rebase-*")), "must not be left mid-rebase"
+        assert not (git_dir / "MERGE_HEAD").exists(), "must not be left mid-merge"
+
 
 # ------------------------------------------------------------------ #
 # sync_layer -- clone
