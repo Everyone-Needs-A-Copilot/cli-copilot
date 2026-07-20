@@ -291,3 +291,38 @@ def layers() -> None:
     for svc in payload["services"]:
         provenance = svc["tier"] if svc["mode"] == "base" else f"{svc['tier']} ({svc['mode']})"
         console.print(f"  {svc['name']:.<20s} {provenance}")
+
+
+# --- Mirror sync (`copilot update`) ---
+
+
+@app.command()
+def update() -> None:
+    """Sync each resolved CLI tier's read-only mirror from its declared source.
+
+    Never-destroy (invariant #2/#3): a mirror whose git working tree is
+    DIRTY is HELD -- zero writes, reported, and skipped. Only a clean or
+    absent mirror is touched, and only ever cloned or pulled -- this never
+    pushes, and never touches an author's personal working tree.
+
+    Concrete refs only (branch / exact tag / SHA) for now: a semver-RANGE
+    `source.ref` (e.g. the live foundation layer's `^1.4.5`) is reported
+    `skipped` -- resolving ranges is a separate follow-up. See
+    `config/sync.py` for the per-layer sync logic this wraps.
+    """
+    from .config.layers import resolve_cli_layer_chain
+    from .config.sync import sync_all
+
+    chain = resolve_cli_layer_chain()
+
+    if not chain:
+        console.print(
+            "[dim]No copilot.layers.yml resolved a 'cli' component chain -- "
+            "nothing to sync.[/dim]"
+        )
+        return
+
+    console.print("[bold]Syncing CLI tier mirrors[/bold]\n")
+    for result in sync_all(chain):
+        console.print(f"  {result.layer_id:.<24s} {result.describe()}")
+    console.print()
