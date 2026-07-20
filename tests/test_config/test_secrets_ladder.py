@@ -19,9 +19,24 @@ from copilot_cli.config.secrets_ladder import (
 )
 
 
-class TestManagedStoreRungStub:
-    def test_falls_through_cleanly_when_no_client_exists(self):
+class TestManagedStoreRung:
+    def test_dormant_falls_through_when_no_store_configured(self):
+        """Rung 1 is Infisical-backed now, but with no layer declaring a store
+        (empty chain) it must fall through as `_SecretRungUnavailable` -- no
+        network, identical to the pre-implementation behaviour."""
         with pytest.raises(_SecretRungUnavailable):
+            _rung_managed_store("SOME_NAME", chain=[])
+
+    def test_store_unavailable_is_translated_to_rung_unavailable(self, monkeypatch):
+        """Any `StoreUnavailable` from the backend surfaces as the ladder's
+        internal fall-through signal, never as a hard error."""
+        import copilot_cli.config.managed_store as ms
+
+        def _boom(name, chain):
+            raise ms.StoreUnavailable("endpoint down")
+
+        monkeypatch.setattr(ms, "resolve_from_store", _boom)
+        with pytest.raises(_SecretRungUnavailable, match="endpoint down"):
             _rung_managed_store("SOME_NAME", chain=[])
 
 

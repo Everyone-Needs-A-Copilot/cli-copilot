@@ -11,9 +11,13 @@ order:
 A miss at every rung raises `SecretResolutionError` -- **never** a silent
 empty-string or `None` value (the failure this ladder exists to prevent).
 
-Rungs 1 and 3 have no client/flow implemented yet in this foundation (no
-shared-store client, no device-flow auth exist in this repo) and are
-stubbed cleanly: they raise the internal `_SecretRungUnavailable` so the
+Rung 1 (managed store) is implemented against the ecosystem's Infisical via
+`config/managed_store.py` (which reuses the base `infisical` service's own
+`InfisicalClient`). It is **dormant until a tier's `.env` declares an
+`INFISICAL_WORKSPACE_ID`** -- absent that, it falls through with no network
+call, so an unconfigured machine is byte-for-byte the old keychain-first
+behaviour. Rung 3 (device-code flow) still has no flow implemented and is
+stubbed cleanly: it raises the internal `_SecretRungUnavailable` so the
 ladder falls through to the next rung, rather than pretending to succeed
 with an empty value. Rung 2 (keychain) is implemented for real via the
 macOS `security` CLI. Rung 4 (secure paste) only engages on an interactive
@@ -71,29 +75,31 @@ class _SecretRungUnavailable(Exception):
 
 
 def _rung_managed_store(name: str, chain: list[CliLayer]) -> str:
-    """Rung 1: tier-scoped managed secret store (e.g. Infisical `/shared`).
+    """Rung 1: tier-scoped managed secret store (Infisical).
 
-    Per `credentials-and-boundary.md` §1.6.2 step 6: if no
-    `shared_secret_store_url` is present in the inherited tier config, this
-    rung is *absent*, not misconfigured -- fall through without guessing a
-    URL from convention or environment. Tier resolution for this rung
-    follows the same nearest-wins precedence as the chain itself: a
-    personal-tier reference never checks a shared store; a department-tier
-    reference checks department, then org, never upward.
+    Per `credentials-and-boundary.md` §1.6.2 step 6: if no store config
+    (`INFISICAL_WORKSPACE_ID`) is present in any inherited tier's `.env`,
+    this rung is *absent*, not misconfigured -- it falls through **without a
+    network call**, so an unconfigured machine behaves exactly as before
+    (keychain-first). Tier resolution follows the same nearest-wins
+    precedence as the chain itself: a personal-tier reference never checks a
+    broader store; org checks org's store, never upward.
 
-    No shared-store client exists in this foundation yet, so this rung is a
-    clean stub: it falls through for every layer rather than guessing or
-    silently succeeding. Phase 2+ wires the real client behind this same
-    signature so callers never need to change.
+    The concrete backend (`config/managed_store.resolve_from_store`) reuses
+    the base `infisical` service's own `InfisicalClient`, sources the store's
+    bootstrap credentials OUTSIDE the store (keychain, then `.env`) to avoid
+    the bootstrap paradox, refuses store-config names up front to prevent
+    recursion, and translates every miss (absent config, unreachable
+    endpoint, auth failure, name-not-present) into `_SecretRungUnavailable`
+    so the ladder falls through to the keychain rung -- never a hard failure
+    here, never a silent empty value.
     """
-    for _layer in chain:
-        # Config-only lookup point -- no network client implemented yet.
-        # A real implementation would read `shared_secret_store_url` from
-        # this layer's non-secret `.env` and, if present, perform a scoped
-        # authenticated read here. Absent that client, every layer falls
-        # through cleanly.
-        continue
-    raise _SecretRungUnavailable("managed secret store client not implemented")
+    from copilot_cli.config.managed_store import StoreUnavailable, resolve_from_store
+
+    try:
+        return resolve_from_store(name, chain)
+    except StoreUnavailable as exc:
+        raise _SecretRungUnavailable(str(exc)) from exc
 
 
 def _rung_keychain(name: str, chain: list[CliLayer]) -> str:
