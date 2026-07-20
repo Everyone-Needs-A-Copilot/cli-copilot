@@ -106,6 +106,55 @@ class SecretRefSource(PydanticBaseSettingsSource):
         return result
 
 
+class TierConfigSource(PydanticBaseSettingsSource):
+    """Surfaces ONE tier's committed `cli.overlay.yml` `adopt[].config` block
+    as a settings source -- the config-inheritance counterpart to
+    `SecretRefSource`. This is what lets non-secret store/service config
+    (e.g. `infisical_workspace_id`) inherit down-tier from a committed
+    overlay instead of only ever living in that tier's local `.env`.
+
+    Unlike `SecretRefSource` (which spans the whole chain), one instance
+    covers exactly one layer, so `settings_customise_sources` can interleave
+    it immediately AHEAD of that SAME layer's `DotEnvSettingsSource` in the
+    source tuple -- giving a tier's committed `config:` precedence over its
+    OWN `.env`, while a NEARER tier's `.env` still outranks a FARTHER tier's
+    `config:` because nearest-wins is preserved by source ORDER, not by
+    anything in this class.
+
+    Overlay config keys are already lowercase field-name-shaped (e.g.
+    `infisical_base_url`, matching the field name exactly, matched
+    case-sensitively here); a key that isn't an actual `Settings` field
+    simply never matches any `field_name` iterated in `__call__` below --
+    belt-and-suspenders alongside `extra="ignore"`.
+    """
+
+    def __init__(self, settings_cls: type[BaseSettings], layer: CliLayer):
+        super().__init__(settings_cls)
+        self._config = self._collect_config(layer)
+
+    @staticmethod
+    def _collect_config(layer: CliLayer) -> dict[str, str]:
+        overlay = load_tier_overlay(layer.overlay_path)
+        merged: dict[str, str] = {}
+        for adopt in overlay.adopt:
+            merged.update(adopt.config)
+        return merged
+
+    def get_field_value(self, field, field_name: str) -> tuple[object, str, bool]:
+        if field_name not in self._config:
+            return None, field_name, False
+        return self._config[field_name], field_name, False
+
+    def __call__(self) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for field_name, field in self.settings_cls.model_fields.items():
+            value, key, is_complex = self.get_field_value(field, field_name)
+            if value is None:
+                continue
+            result[key] = self.prepare_field_value(field_name, field, value, is_complex)
+        return result
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_find_env_file()),
@@ -137,8 +186,16 @@ class Settings(BaseSettings):
             return (init_settings, env_settings, dotenv_settings, file_secret_settings)
 
         # ---- LAYERED PATH: highest precedence FIRST (personal ... foundation) ----
+        # Per tier, a `TierConfigSource` is interleaved immediately AHEAD of
+        # that SAME tier's `DotEnvSettingsSource` -- so a tier's committed
+        # `cli.overlay.yml` config outranks its OWN `.env`, while a NEARER
+        # tier's `.env` still outranks a FARTHER tier's `config:` (nearest-
+        # wins preserved by list order, not by pairing). Do NOT hoist every
+        # tier's config ahead of every tier's `.env` -- that would invert
+        # nearest-wins across tiers.
         sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings]
         for layer in chain:
+            sources.append(TierConfigSource(cls, layer))
             sources.append(DotEnvSettingsSource(cls, env_file=layer.env_path))
         sources.append(SecretRefSource(cls, chain))
         return tuple(sources)

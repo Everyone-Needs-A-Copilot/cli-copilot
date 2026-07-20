@@ -38,6 +38,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from copilot_cli.config.layers import load_tier_overlay
+
 if TYPE_CHECKING:
     from copilot_cli.config.layers import CliLayer
 
@@ -181,7 +183,19 @@ def _find_store_layer(chain: list[CliLayer]):
     """Return ``(layer, config)`` for the nearest layer declaring a store
     (an ``INFISICAL_WORKSPACE_ID``), or ``None`` if no layer does — the dormant
     default. *chain* is already highest-precedence-first, so the first match is
-    the nearest tier."""
+    the nearest tier.
+
+    Store config is folded from TWO places per layer, config-wins: the
+    layer's committed ``cli.overlay.yml`` ``adopt[].config`` (config
+    inheritance -- lets a tier ship its store config in the repo, with no
+    local `.env` required at all) merged OVER that same layer's plain
+    `.env`. This mirrors `settings.py`'s per-tier `TierConfigSource` /
+    `DotEnvSettingsSource` interleave (config outranks its own tier's
+    `.env`) so the store-config gate agrees with the Settings fold.
+    `layers.load_tier_overlay` is pure YAML parsing -- no pydantic, no
+    `Settings()` construction -- so this import carries no cycle risk back
+    into `settings.py` or `secrets_ladder.py`.
+    """
     wanted = {
         "INFISICAL_BASE_URL",
         "INFISICAL_WORKSPACE_ID",
@@ -191,7 +205,15 @@ def _find_store_layer(chain: list[CliLayer]):
         "INFISICAL_CLIENT_SECRET",
     }
     for layer in chain:
-        cfg = _parse_env_keys(layer.env_path, wanted)
+        env_cfg = _parse_env_keys(layer.env_path, wanted)
+        overlay = load_tier_overlay(layer.overlay_path)
+        overlay_cfg: dict[str, str] = {}
+        for adopt in overlay.adopt:
+            for key, value in adopt.config.items():
+                upper = key.upper()
+                if upper in wanted:
+                    overlay_cfg[upper] = value
+        cfg = {**env_cfg, **overlay_cfg}  # config-wins over .env, matching settings.py's ordering
         if cfg.get("INFISICAL_WORKSPACE_ID"):
             return layer, cfg
     return None

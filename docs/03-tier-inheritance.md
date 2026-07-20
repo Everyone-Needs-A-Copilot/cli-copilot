@@ -103,14 +103,32 @@ override:
   file_secret_settings)` tuple as before. `_find_env_file()` — baked into
   `model_config.env_file` at class-body eval time — is reached completely
   unchanged; `COPILOT_ENV_FILE` keeps working exactly as it always has.
-- **A manifest resolves**: builds `(init_settings, env_settings,
-  <DotEnvSettingsSource per tier, personal→…→foundation>,
-  SecretRefSource)`. Each tier's `DotEnvSettingsSource` carries **non-secret
-  config only**. `SecretRefSource` (in the same file) is the single place a
-  `requires_secret` name resolves to a real value, via the credential
-  ladder (`config/secrets_ladder.py`) — fail-closed: a declared secret that
-  misses every ladder rung raises `SecretResolutionError`, never silently
-  leaves the field at its `""` default.
+- **A manifest resolves**: builds `(init_settings, env_settings, Σ over
+  nearest-first layers of [TierConfigSource(layer),
+  DotEnvSettingsSource(layer)], SecretRefSource)`. `TierConfigSource` (in
+  the same file) surfaces one tier's committed `cli.overlay.yml`
+  `adopt[].config` block as a settings source, and is interleaved
+  immediately **ahead of that same tier's** `DotEnvSettingsSource` — so **a
+  tier's committed `config:` outranks its OWN `.env`, but a nearer tier's
+  `.env` still beats a farther tier's `config:`** (nearest-wins is
+  preserved by the across-tier list order, not by the within-tier pairing).
+  `SecretRefSource` is last: the single place a `requires_secret` name
+  resolves to a real value, via the credential ladder
+  (`config/secrets_ladder.py`) — fail-closed: a declared secret that misses
+  every ladder rung raises `SecretResolutionError`, never silently leaves
+  the field at its `""` default.
+
+  Non-secret **store** config (`infisical_workspace_id` / `_environment` /
+  `_secret_path`) is not a `Settings` field, so it doesn't flow through
+  `TierConfigSource` — it's read separately by
+  `managed_store._find_store_layer`, which folds that same layer's
+  committed `config:` block over its `.env` (config-wins, mirroring
+  `TierConfigSource`'s own-tier ordering) so the store-config gate agrees
+  with the `Settings` fold. `INFISICAL_BASE_URL` intentionally stays
+  **dual** — also settable in `.env` and read there directly — because
+  `InfisicalSettings` (`services/infisical/core/config.py`) loads it
+  through its own independent `env_prefix="INFISICAL_"` settings model,
+  outside this tier chain entirely.
 
 The credential ladder (`credentials-and-boundary.md` §1.6.3), in order:
 managed shared secret store → OS keychain → interactive device-code flow →
