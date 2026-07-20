@@ -249,3 +249,148 @@ class TestLoadTierOverlay:
         overlay_path.write_text(yaml.safe_dump({"adopt": [{"config": {}}]}))  # missing 'service'
         with pytest.raises(LayersManifestError):
             load_tier_overlay(overlay_path)
+
+
+class TestRequiresSecretRoutingHint:
+    """Item #3: the optional per-`requires_secret` `from:` routing hint.
+    Bare-string entries (the pre-existing shape) must keep parsing/resolving
+    exactly as before; the new mapping form only ever ADDS a hint alongside
+    the unchanged `requires_secret` name tuple -- see `_parse_requires_secret`
+    and `secrets_ladder._RUNG_SUBSET_FOR_HINT`."""
+
+    def test_bare_string_entries_are_back_compat(self, tmp_path):
+        """A plain `requires_secret: [NAME]` list -- today's only shape --
+        still parses into the identical `requires_secret` tuple with an EMPTY
+        hints map (default `"any"`, i.e. unrestricted/current behavior)."""
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {"adopt": [{"service": "uspto", "requires_secret": ["USPTO_CLI_API_KEY"]}]}
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.adopt[0].requires_secret == ("USPTO_CLI_API_KEY",)
+        assert overlay.adopt[0].requires_secret_hints == {}
+        assert overlay.all_requires_secret() == ("USPTO_CLI_API_KEY",)
+        assert overlay.all_requires_secret_hints() == {}
+
+    def test_mapping_form_parses_name_and_hint(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {
+                    "provides": [
+                        {
+                            "service": "discord",
+                            "module": "pkg.mod",
+                            "requires_secret": [{"name": "DISCORD_BOT_TOKEN", "from": "keychain"}],
+                        }
+                    ]
+                }
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        # The name still lands in the unchanged bare tuple -- every existing
+        # reader (`all_requires_secret`, `_loader.py`, `SecretRefSource`'s
+        # `_collect_secret_names` set-membership check) keeps working.
+        assert overlay.provides[0].requires_secret == ("DISCORD_BOT_TOKEN",)
+        assert overlay.provides[0].requires_secret_hints == {"DISCORD_BOT_TOKEN": "keychain"}
+        assert overlay.all_requires_secret() == ("DISCORD_BOT_TOKEN",)
+        assert overlay.all_requires_secret_hints() == {"DISCORD_BOT_TOKEN": "keychain"}
+
+    def test_mapping_form_store_hint(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {"adopt": [{"service": "uspto", "requires_secret": [{"name": "X", "from": "store"}]}]}
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.adopt[0].requires_secret == ("X",)
+        assert overlay.adopt[0].requires_secret_hints == {"X": "store"}
+
+    def test_mapping_form_explicit_any_is_not_stored_as_a_hint(self, tmp_path):
+        """`from: any` is the default -- explicitly spelling it out must not
+        appear in `requires_secret_hints` (keeps the "absent == any" contract
+        `SecretRefSource` relies on via `dict.get(name)` -> `None`)."""
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {"adopt": [{"service": "uspto", "requires_secret": [{"name": "X", "from": "any"}]}]}
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.adopt[0].requires_secret == ("X",)
+        assert overlay.adopt[0].requires_secret_hints == {}
+
+    def test_mixed_bare_and_mapping_entries_preserve_order(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {
+                    "adopt": [
+                        {
+                            "service": "uspto",
+                            "requires_secret": [
+                                "PLAIN_ONE",
+                                {"name": "HINTED", "from": "keychain"},
+                                "PLAIN_TWO",
+                            ],
+                        }
+                    ]
+                }
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.adopt[0].requires_secret == ("PLAIN_ONE", "HINTED", "PLAIN_TWO")
+        assert overlay.adopt[0].requires_secret_hints == {"HINTED": "keychain"}
+
+    def test_invalid_from_value_raises(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {"adopt": [{"service": "uspto", "requires_secret": [{"name": "X", "from": "cloud"}]}]}
+            )
+        )
+        with pytest.raises(LayersManifestError, match="'from' must be one of"):
+            load_tier_overlay(overlay_path)
+
+    def test_mapping_entry_missing_name_raises(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump({"adopt": [{"service": "uspto", "requires_secret": [{"from": "keychain"}]}]})
+        )
+        with pytest.raises(LayersManifestError, match="missing required key 'name'"):
+            load_tier_overlay(overlay_path)
+
+    def test_non_string_non_mapping_entry_raises(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump({"adopt": [{"service": "uspto", "requires_secret": [123]}]})
+        )
+        with pytest.raises(LayersManifestError, match="must be a string or a"):
+            load_tier_overlay(overlay_path)
+
+    def test_hints_merge_across_adopt_provides_override_nearest_first_wins(self, tmp_path):
+        """`all_requires_secret_hints()` merges all three sections; a
+        duplicate name's FIRST declaration wins, mirroring
+        `all_requires_secret()`'s own dedup order."""
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {
+                    "adopt": [
+                        {"service": "a", "requires_secret": [{"name": "SHARED", "from": "keychain"}]}
+                    ],
+                    "provides": [
+                        {
+                            "service": "b",
+                            "module": "pkg.mod",
+                            "requires_secret": [{"name": "SHARED", "from": "store"}],
+                        }
+                    ],
+                }
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.all_requires_secret_hints() == {"SHARED": "keychain"}

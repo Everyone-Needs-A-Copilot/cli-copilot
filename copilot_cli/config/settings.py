@@ -75,26 +75,41 @@ class SecretRefSource(PydanticBaseSettingsSource):
     rung raises `SecretResolutionError` (via `resolve_secret`) instead of
     silently leaving the field at its `""` default -- see
     `secrets_ladder.py` and red-team §6.3 ("no silent no-op").
+
+    A declared secret may also carry a per-name routing hint (`cli.overlay.
+    yml`'s mapping-form `requires_secret: [{name, from}]`, parsed by
+    `layers.load_tier_overlay` into `TierOverlay.all_requires_secret_hints()`)
+    -- threaded through to `resolve_secret`'s `prefer` param below. The hint
+    is a pure ladder-rung filter (see `secrets_ladder._RUNG_SUBSET_FOR_HINT`):
+    it never changes *whether* a name resolves through this source, only
+    which rungs are consulted while resolving it.
     """
 
     def __init__(self, settings_cls: type[BaseSettings], chain: list[CliLayer]):
         super().__init__(settings_cls)
         self._chain = chain
-        self._secret_names = self._collect_secret_names(chain)
+        self._secret_names, self._secret_hints = self._collect_secret_names(chain)
 
     @staticmethod
-    def _collect_secret_names(chain: list[CliLayer]) -> set[str]:
+    def _collect_secret_names(chain: list[CliLayer]) -> tuple[set[str], dict[str, str]]:
         names: set[str] = set()
+        hints: dict[str, str] = {}
         for layer in chain:
             overlay = load_tier_overlay(layer.overlay_path)
             names.update(overlay.all_requires_secret())
-        return names
+            # Nearest tier wins on a hint conflict, same as every other
+            # nearest-wins fold in this module -- `chain` is already
+            # highest-precedence-first, so first-seen-per-name wins here.
+            for name, hint in overlay.all_requires_secret_hints().items():
+                hints.setdefault(name, hint)
+        return names, hints
 
     def get_field_value(self, field, field_name: str) -> tuple[object, str, bool]:
         env_name = field_name.upper()
         if env_name not in self._secret_names:
             return None, field_name, False
-        return resolve_secret(env_name, self._chain), field_name, False
+        prefer = self._secret_hints.get(env_name)
+        return resolve_secret(env_name, self._chain, prefer=prefer), field_name, False
 
     def __call__(self) -> dict[str, object]:
         result: dict[str, object] = {}

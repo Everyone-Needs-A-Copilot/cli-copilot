@@ -148,15 +148,48 @@ def _rung_secure_paste(name: str, chain: list[CliLayer]) -> str:
 
 _LADDER = (_rung_managed_store, _rung_keychain, _rung_device_flow, _rung_secure_paste)
 
+# Per-secret routing hint -> the SUBSET of `_LADDER` compatible with it. A hint
+# only ever RESTRICTS which rungs are tried -- it can never add a rung, never
+# reorders the ones it keeps, and never changes what counts as a "hit" within
+# a kept rung. `"any"`/unset (the default, current behavior) is deliberately
+# absent from this map so `resolve_secret` falls back to the full `_LADDER`.
+#
+#   "keychain" -- this name provably only ever lives in the OS keychain
+#   (overlay-declared `from: keychain`, e.g. `DISCORD_BOT_TOKEN`). Trying the
+#   managed-store rung first would pay a real network round-trip (and its
+#   ~6s timeout when the store is unreachable) for a name the store can never
+#   hold. Restricted to rung 2 only.
+#
+#   "store" -- mirror image (`from: store`): skip the keychain rung. Minor
+#   perf win (a local `security` CLI call, not a network round-trip), kept
+#   for symmetry.
+#
+# A miss within the restricted subset still falls through to
+# `SecretResolutionError` exactly as an unrestricted miss would -- the hint
+# changes which rungs are CONSULTED, never whether a miss fails closed.
+_RUNG_SUBSET_FOR_HINT: dict[str, tuple] = {
+    "keychain": (_rung_keychain,),
+    "store": (_rung_managed_store, _rung_device_flow, _rung_secure_paste),
+}
 
-def resolve_secret(name: str, chain: list[CliLayer]) -> str:
+
+def resolve_secret(name: str, chain: list[CliLayer], prefer: str | None = None) -> str:
     """Resolve *name* through the fail-closed ladder.
 
     Raises `SecretResolutionError` if every rung misses. Never returns an
     empty string or `None` -- a caller either gets a real value or an
     exception, by construction.
+
+    `prefer` is an optional per-secret routing hint (`"keychain"` | `"store"`
+    | `"any"`/`None`) threaded from the overlay's `requires_secret: [{name,
+    from}]` declaration (see `config/layers.py`). It only FILTERS which
+    `_LADDER` rungs are tried -- see `_RUNG_SUBSET_FOR_HINT` -- never adds a
+    source, never reorders the rungs it keeps, and never weakens the
+    fail-closed guarantee: a miss within the filtered subset still raises
+    `SecretResolutionError`, exactly like an unrestricted miss.
     """
-    for rung in _LADDER:
+    ladder = _RUNG_SUBSET_FOR_HINT.get(prefer, _LADDER) if prefer else _LADDER
+    for rung in ladder:
         try:
             value = rung(name, chain)
         except _SecretRungUnavailable:

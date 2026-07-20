@@ -110,3 +110,97 @@ class TestResolveSecretFailsClosed:
 
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.subprocess.run", fake_run)
         assert resolve_secret("SOME_NAME", chain=[]) == "from-keychain"
+
+
+class TestPreferRoutingHint:
+    """Item #3: `resolve_secret`'s `prefer` param (threaded from the overlay's
+    `requires_secret: [{name, from}]` hint via `SecretRefSource`) restricts
+    which `_LADDER` rungs are tried -- see `_RUNG_SUBSET_FOR_HINT`. These
+    tests prove the perf win (zero managed-store calls for a keychain-hinted
+    name) AND the security invariant: a miss within the restricted subset
+    still fails closed, it never falls through to a rung the hint excluded.
+    """
+
+    def test_keychain_hint_never_touches_the_store_on_a_hit(self, monkeypatch):
+        """The perf win: a `from: keychain` hit resolves with ZERO
+        managed-store calls -- no `list_secrets`, no network, no ~6s
+        timeout."""
+        calls = {"store": 0}
+
+        def _must_not_be_called(name, chain):
+            calls["store"] += 1
+            raise AssertionError("managed-store rung must not be consulted for a keychain hint")
+
+        monkeypatch.setattr("copilot_cli.config.managed_store.resolve_from_store", _must_not_be_called)
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.platform", "darwin")
+
+        def fake_run(*args, **kwargs):
+            return subprocess.CompletedProcess(args, returncode=0, stdout="from-keychain\n", stderr="")
+
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.subprocess.run", fake_run)
+
+        assert resolve_secret("DISCORD_BOT_TOKEN", chain=[], prefer="keychain") == "from-keychain"
+        assert calls["store"] == 0
+
+    def test_any_hint_still_hits_the_store_on_a_keychain_miss(self, monkeypatch):
+        """Contrast case: with the default hint (`prefer="any"`, i.e.
+        unrestricted -- current behavior), a keychain miss DOES fall through
+        to the managed-store rung -- proving the skip above is the hint's
+        doing, not an accidental global change to the ladder."""
+        import copilot_cli.config.managed_store as ms
+
+        calls = {"store": 0}
+
+        def _tracked(name, chain):
+            calls["store"] += 1
+            raise ms.StoreUnavailable("still down")
+
+        monkeypatch.setattr(ms, "resolve_from_store", _tracked)
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.platform", "darwin")
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.stdin", _NonInteractiveStdin())
+
+        def fake_run(*args, **kwargs):
+            return subprocess.CompletedProcess(args, returncode=44, stdout="", stderr="not found")
+
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.subprocess.run", fake_run)
+
+        with pytest.raises(SecretResolutionError):
+            resolve_secret("DISCORD_BOT_TOKEN", chain=[], prefer="any")
+        assert calls["store"] == 1
+
+    def test_keychain_hint_missing_from_keychain_fails_closed_without_store(self, monkeypatch):
+        """Fail-closed proof: a `from: keychain` secret ABSENT from the
+        keychain resolves to `SecretResolutionError` -- it does NOT fall
+        through to the store. Asserting zero store calls (not just the
+        exception type) proves the restriction holds, not merely that
+        *some* rung eventually failed."""
+        calls = {"store": 0}
+
+        def _must_not_be_called(name, chain):
+            calls["store"] += 1
+            raise AssertionError("managed-store rung must not be consulted for a keychain hint")
+
+        monkeypatch.setattr("copilot_cli.config.managed_store.resolve_from_store", _must_not_be_called)
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.platform", "darwin")
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.stdin", _NonInteractiveStdin())
+
+        def fake_run(*args, **kwargs):
+            return subprocess.CompletedProcess(args, returncode=44, stdout="", stderr="not found")
+
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.subprocess.run", fake_run)
+
+        with pytest.raises(SecretResolutionError) as exc_info:
+            resolve_secret("DISCORD_BOT_TOKEN", chain=[], prefer="keychain")
+        assert exc_info.value.name == "DISCORD_BOT_TOKEN"
+        assert calls["store"] == 0
+
+    def test_unset_hint_is_unrestricted_back_compat(self, monkeypatch):
+        """No `prefer` at all (the pre-existing call shape) resolves exactly
+        as before -- the full, unrestricted ladder."""
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.platform", "darwin")
+
+        def fake_run(*args, **kwargs):
+            return subprocess.CompletedProcess(args, returncode=0, stdout="from-keychain\n", stderr="")
+
+        monkeypatch.setattr("copilot_cli.config.secrets_ladder.subprocess.run", fake_run)
+        assert resolve_secret("SOME_NAME", chain=[]) == "from-keychain"

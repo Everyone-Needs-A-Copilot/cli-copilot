@@ -297,6 +297,7 @@ class OverlayAdopt:
     service: str
     config: dict[str, str] = field(default_factory=dict)
     requires_secret: tuple[str, ...] = ()
+    requires_secret_hints: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -308,6 +309,7 @@ class OverlayProvide:
     module: str
     help: str = ""
     requires_secret: tuple[str, ...] = ()
+    requires_secret_hints: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -319,6 +321,7 @@ class OverlayOverride:
     service: str
     module: str
     requires_secret: tuple[str, ...] = ()
+    requires_secret_hints: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -347,6 +350,84 @@ class TierOverlay:
                 out.append(n)
         return tuple(out)
 
+    def all_requires_secret_hints(self) -> dict[str, str]:
+        """Ordered ``{name: hint}`` for every `requires_secret` name declared
+        with a non-default routing hint (`from: keychain` | `from: store`)
+        anywhere in this overlay. A name absent here has the default `"any"`
+        hint -- i.e. `resolve_secret` tries every ladder rung, byte-for-byte
+        today's behavior. First declaration wins on a duplicate name, matching
+        `all_requires_secret()`'s own dedup order.
+
+        This is purely a routing-perf hint (see `secrets_ladder.py`'s
+        `_RUNG_SUBSET_FOR_HINT`) -- it never changes *which* names are
+        declared secret, only which ladder rungs are consulted to resolve
+        one.
+        """
+        merged: dict[str, str] = {}
+        for a in self.adopt:
+            for name, hint in a.requires_secret_hints.items():
+                merged.setdefault(name, hint)
+        for p in self.provides:
+            for name, hint in p.requires_secret_hints.items():
+                merged.setdefault(name, hint)
+        for o in self.override:
+            for name, hint in o.requires_secret_hints.items():
+                merged.setdefault(name, hint)
+        return merged
+
+
+# Valid `from:` values on a mapping-form `requires_secret` entry. `"any"` is
+# the default (equivalent to a bare string name) and is never stored in
+# `requires_secret_hints` -- see `_parse_requires_secret`.
+_VALID_SECRET_SOURCES = frozenset({"any", "store", "keychain"})
+
+
+def _parse_requires_secret(raw: object) -> tuple[tuple[str, ...], dict[str, str]]:
+    """Parse one `requires_secret:` list into ``(names, hints)``.
+
+    Each entry is either:
+
+    - a bare string name (``FOO``) -- back-compat form, hint defaults to
+      `"any"` (try every ladder rung, today's behavior, unchanged).
+    - a mapping (``{name: FOO, from: keychain}``) -- gives the credential
+      ladder (`secrets_ladder.resolve_secret`'s `prefer` param) a routing
+      hint that RESTRICTS which rungs are tried for that one name. The hint
+      never adds a source and never changes ladder precedence -- see
+      `secrets_ladder._RUNG_SUBSET_FOR_HINT`.
+
+    ``names`` preserves declaration order (mirrors the pre-hint bare-tuple
+    shape exactly, so every existing reader of `.requires_secret` keeps
+    working unchanged). ``hints`` only contains entries with a non-default
+    (non-`"any"`) hint.
+    """
+    names: list[str] = []
+    hints: dict[str, str] = {}
+    for entry in raw or []:
+        if isinstance(entry, str):
+            names.append(entry)
+            continue
+        if isinstance(entry, dict):
+            try:
+                name = str(entry["name"])
+            except KeyError as exc:
+                raise LayersManifestError(
+                    f"requires_secret entry {entry!r} is missing required key 'name'"
+                ) from exc
+            source = str(entry.get("from", "any"))
+            if source not in _VALID_SECRET_SOURCES:
+                raise LayersManifestError(
+                    f"requires_secret entry {entry!r}: 'from' must be one of "
+                    f"{sorted(_VALID_SECRET_SOURCES)}, got {source!r}"
+                )
+            names.append(name)
+            if source != "any":
+                hints[name] = source
+            continue
+        raise LayersManifestError(
+            f"requires_secret entry must be a string or a {{name, from}} mapping, got {entry!r}"
+        )
+    return tuple(names), hints
+
 
 def load_tier_overlay(overlay_path: Path) -> TierOverlay:
     """Parse one tier's `cli.overlay.yml`.
@@ -366,31 +447,45 @@ def load_tier_overlay(overlay_path: Path) -> TierOverlay:
         raise LayersManifestError(f"{overlay_path}: top-level must be a mapping")
 
     try:
-        adopt = tuple(
-            OverlayAdopt(
-                service=str(e["service"]),
-                config={str(k): str(v) for k, v in (e.get("config") or {}).items()},
-                requires_secret=tuple(str(s) for s in (e.get("requires_secret") or [])),
+        adopt_list = []
+        for e in raw.get("adopt") or []:
+            names, hints = _parse_requires_secret(e.get("requires_secret"))
+            adopt_list.append(
+                OverlayAdopt(
+                    service=str(e["service"]),
+                    config={str(k): str(v) for k, v in (e.get("config") or {}).items()},
+                    requires_secret=names,
+                    requires_secret_hints=hints,
+                )
             )
-            for e in (raw.get("adopt") or [])
-        )
-        provides = tuple(
-            OverlayProvide(
-                service=str(e["service"]),
-                module=str(e["module"]),
-                help=str(e.get("help", "")),
-                requires_secret=tuple(str(s) for s in (e.get("requires_secret") or [])),
+        adopt = tuple(adopt_list)
+
+        provides_list = []
+        for e in raw.get("provides") or []:
+            names, hints = _parse_requires_secret(e.get("requires_secret"))
+            provides_list.append(
+                OverlayProvide(
+                    service=str(e["service"]),
+                    module=str(e["module"]),
+                    help=str(e.get("help", "")),
+                    requires_secret=names,
+                    requires_secret_hints=hints,
+                )
             )
-            for e in (raw.get("provides") or [])
-        )
-        override = tuple(
-            OverlayOverride(
-                service=str(e["service"]),
-                module=str(e["module"]),
-                requires_secret=tuple(str(s) for s in (e.get("requires_secret") or [])),
+        provides = tuple(provides_list)
+
+        override_list = []
+        for e in raw.get("override") or []:
+            names, hints = _parse_requires_secret(e.get("requires_secret"))
+            override_list.append(
+                OverlayOverride(
+                    service=str(e["service"]),
+                    module=str(e["module"]),
+                    requires_secret=names,
+                    requires_secret_hints=hints,
+                )
             )
-            for e in (raw.get("override") or [])
-        )
+        override = tuple(override_list)
     except (KeyError, TypeError) as exc:
         raise LayersManifestError(f"{overlay_path}: malformed entry: {exc}") from exc
 
