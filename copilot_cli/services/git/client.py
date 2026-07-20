@@ -69,16 +69,26 @@ class GitClient:
             if branch:
                 kwargs["branch"] = branch
             repo = Repo.clone_from(url, path, **kwargs)
-            return {
-                "path": str(Path(path).resolve()),
-                "branch": str(repo.active_branch),
-            }
         except Exception as exc:
             raise CopilotError(
                 f"Clone failed: {exc}",
                 service="git",
                 hint="Verify the URL and that you have access.",
             ) from exc
+
+        try:
+            active = str(repo.active_branch)
+        except TypeError:
+            # Checking out an exact tag/SHA (e.g. a resolved semver-range
+            # ref -- see config/sync.py) leaves HEAD detached, which has no
+            # branch by definition. Report what was actually checked out
+            # rather than let a successful clone crash into "Clone failed".
+            active = branch or repo.head.commit.hexsha
+
+        return {
+            "path": str(Path(path).resolve()),
+            "branch": active,
+        }
 
     def pull(
         self,
@@ -130,12 +140,25 @@ class GitClient:
         """
         repo = self._open_repo(path)
 
-        current_branch = str(repo.active_branch)
+        try:
+            current_branch = str(repo.active_branch)
+            active_branch = repo.active_branch
+        except TypeError:
+            # Detached HEAD -- e.g. a mirror pinned to an exact tag/SHA (a
+            # resolved semver-range ref, see config/sync.py) has no branch
+            # by definition. Report the checked-out commit instead of
+            # raising: config/sync.py's never-destroy gate treats a status()
+            # failure as "can't confirm clean" and HOLDS the mirror forever,
+            # which would be wrong here -- detached HEAD is the expected,
+            # legitimate state for a tag-pinned mirror, not an error.
+            current_branch = repo.head.commit.hexsha
+            active_branch = None
+
         tracking = ""
         ahead = 0
         behind = 0
 
-        tracking_branch = repo.active_branch.tracking_branch()
+        tracking_branch = active_branch.tracking_branch() if active_branch is not None else None
         if tracking_branch:
             tracking = str(tracking_branch)
             commits_ahead = list(repo.iter_commits(f"{tracking_branch}..{current_branch}"))
@@ -163,6 +186,58 @@ class GitClient:
             "deleted": deleted,
             "conflicted": conflicted,
         }
+
+    def list_tags(self, url_or_path: str) -> list[str]:
+        """List tag names published by a repository, via ``git ls-remote
+        --tags`` -- works against a remote URL *or* a local path (including
+        an already-cloned mirror or a `file://` scratch remote), and never
+        requires a local clone to exist first.
+
+        Semver-RANGE resolution (`config/semver.resolve_range_to_tag`) needs
+        a source repo's full tag set *before* any local mirror exists -- a
+        range like ``^1.4.5`` must resolve to a concrete tag before the
+        clone-or-pull decision can even be made -- so this always reads
+        straight from the remote rather than requiring a prior clone.
+
+        Args:
+            url_or_path: Remote repository URL, or a local filesystem path
+                (bare or working) git recognizes as a repo.
+
+        Returns:
+            Tag names only (e.g. ``v1.5.0``), de-duplicated, in the order
+            ``git ls-remote`` reports them. Callers needing a specific
+            ordering (e.g. "highest semver") must sort themselves.
+
+        Raises:
+            CopilotError: If listing fails (network error, invalid URL, no
+                access, etc).
+        """
+        try:
+            output = Git().ls_remote("--tags", url_or_path)
+        except Exception as exc:
+            raise CopilotError(
+                f"Listing tags failed: {exc}",
+                service="git",
+                hint="Verify the URL and that you have access.",
+            ) from exc
+
+        tags: list[str] = []
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            _, _, ref = line.partition("\t")
+            if not ref.startswith("refs/tags/"):
+                continue
+            name = ref[len("refs/tags/") :]
+            if name.endswith("^{}"):
+                # Dereferenced pointer for an annotated tag -- same tag name
+                # as the entry already seen (or about to be seen) for the
+                # tag object itself; de-duplicated below either way.
+                name = name[: -len("^{}")]
+            if name not in tags:
+                tags.append(name)
+        return tags
 
     def add(self, path: str, files: list[str]) -> dict:
         """Stage files for commit.

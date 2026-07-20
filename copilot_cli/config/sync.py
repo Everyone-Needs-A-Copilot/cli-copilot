@@ -4,11 +4,12 @@ Per resolved `component: cli` layer (`config.layers.resolve_cli_layer_chain`),
 clone-or-pull that layer's local read-only mirror (`layer.root`, conventionally
 ``~/.copilot/mirrors/cli/<id>``) from its declared `source.repo`/`source.ref`.
 
-Scope (initiative item #2a -- see `copilot-control-tower`'s onboarding-blocker
-tracking): concrete refs only (branch / exact tag / SHA) and the never-destroy
-gate. Semver-RANGE refs (e.g. the live foundation layer's ``^1.4.5``) are
-detected and reported ``skipped`` -- resolving them is a separate follow-up
-(#2b), never attempted here, and never a crash.
+Concrete refs (branch / exact tag / SHA) sync directly. A semver-RANGE ref
+(e.g. the live foundation layer's ``^1.4.5``) is resolved to the HIGHEST
+matching tag first (`config.semver.resolve_range_to_tag`, item #2b), then
+synced via that same concrete-ref path -- if no tag satisfies the range (or
+the repo's tags can't even be listed), the layer is reported ``skipped``/
+``error`` and, per the never-destroy gate below, nothing is written.
 
 Hard invariants (control-tower invariants #2/#3, "never-destroy" + "pull-only
 downward"):
@@ -36,6 +37,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from copilot_cli.config.layers import CliLayer, resolve_cli_layer_chain
+from copilot_cli.config.semver import resolve_range_to_tag
 from copilot_cli.services.git.client import GitClient
 
 # Per the ratified detection rule: a `source.ref` is a semver RANGE (not a
@@ -57,8 +59,8 @@ def is_semver_range(ref: str) -> bool:
     """True if `ref` looks like a semver RANGE rather than a concrete
     branch/tag/SHA -- e.g. ``^1.4.5``, ``~1.2.0``, ``>=1.0.0 <2.0.0``.
 
-    Resolving ranges is out of scope here (#2b); this only needs to detect
-    them reliably enough to skip without crashing.
+    Detection only -- `resolve_range_to_tag` does the actual range ->
+    concrete-tag resolution `sync_layer` wires in below.
     """
     stripped = ref.strip()
     if stripped.startswith(_RANGE_PREFIXES):
@@ -89,10 +91,24 @@ class LayerSyncResult:
     layer_id: str
     action: str  # "cloned" | "pulled" | "held" | "skipped" | "error"
     detail: str = ""
+    role: str = ""
+    ref: str = ""  # the layer's declared `source.ref` (may be a range)
+    resolved_ref: str = ""  # concrete ref actually used/considered; equals
+    # `ref` for a concrete ref, the picked tag for a resolved range, or ""
+    # when no ref was resolved at all (bad range syntax, or no tag matched).
 
     def describe(self) -> str:
         """Human-readable one-line summary, e.g. ``held (local changes)``."""
         return f"{self.action} ({self.detail})" if self.detail else self.action
+
+
+def _ref_detail(layer: CliLayer, resolved_ref: str) -> str:
+    """Detail text for a `cloned`/`pulled` result: unchanged `ref=<ref>` for
+    a concrete ref (preserving #2a's exact wording), or `@ <tag> (<range>)`
+    when the ref was resolved from a semver range."""
+    if resolved_ref != layer.ref:
+        return f"@ {resolved_ref} ({layer.ref})"
+    return f"ref={layer.ref}"
 
 
 def sync_layer(layer: CliLayer, git: GitClient | None = None) -> LayerSyncResult:
@@ -107,42 +123,92 @@ def sync_layer(layer: CliLayer, git: GitClient | None = None) -> LayerSyncResult
     root = layer.root
 
     if is_semver_range(layer.ref):
-        return LayerSyncResult(
-            layer.id, "skipped", f"range ref '{layer.ref}' pending #2b"
-        )
+        try:
+            tags = git.list_tags(layer.repo)
+        except Exception as exc:  # report, never crash
+            return LayerSyncResult(
+                layer.id,
+                "error",
+                f"could not list tags for range '{layer.ref}': {exc}",
+                role=layer.role,
+                ref=layer.ref,
+            )
+        resolved_ref = resolve_range_to_tag(layer.ref, tags)
+        if resolved_ref is None:
+            return LayerSyncResult(
+                layer.id,
+                "skipped",
+                f"no tag matches '{layer.ref}'",
+                role=layer.role,
+                ref=layer.ref,
+            )
+    else:
+        resolved_ref = layer.ref
 
     if root.exists():
         if not (root / ".git").exists():
             # Something occupies the mirror path but it isn't a git repo we
             # can reason about -- fail-safe: hold rather than clone into it.
-            return LayerSyncResult(layer.id, "held", "path exists, not a git repo")
+            return LayerSyncResult(
+                layer.id,
+                "held",
+                "path exists, not a git repo",
+                role=layer.role,
+                ref=layer.ref,
+                resolved_ref=resolved_ref,
+            )
 
         try:
             status = git.status(str(root))
         except Exception as exc:
             # Fail-safe: any status failure is treated as "can't confirm
             # clean", never as license to write.
-            return LayerSyncResult(layer.id, "held", f"status unknown ({exc})")
+            return LayerSyncResult(
+                layer.id,
+                "held",
+                f"status unknown ({exc})",
+                role=layer.role,
+                ref=layer.ref,
+                resolved_ref=resolved_ref,
+            )
 
         if _is_dirty(status):
-            return LayerSyncResult(layer.id, "held", "local changes")
+            return LayerSyncResult(
+                layer.id, "held", "local changes",
+                role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+            )
 
         if _has_unpushed_commits(status):
-            return LayerSyncResult(layer.id, "held", "local commits present")
+            return LayerSyncResult(
+                layer.id, "held", "local commits present",
+                role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+            )
 
         try:
-            git.pull(str(root), branch=layer.ref)
+            git.pull(str(root), branch=resolved_ref)
         except Exception as exc:  # report, never crash
-            return LayerSyncResult(layer.id, "error", str(exc))
-        return LayerSyncResult(layer.id, "pulled", f"ref={layer.ref}")
+            return LayerSyncResult(
+                layer.id, "error", str(exc),
+                role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+            )
+        return LayerSyncResult(
+            layer.id, "pulled", _ref_detail(layer, resolved_ref),
+            role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+        )
 
     # Mirror absent -- safe to clone (never-destroy has nothing to protect).
     root.parent.mkdir(parents=True, exist_ok=True)
     try:
-        git.clone(layer.repo, str(root), branch=layer.ref)
+        git.clone(layer.repo, str(root), branch=resolved_ref)
     except Exception as exc:  # report, never crash
-        return LayerSyncResult(layer.id, "error", str(exc))
-    return LayerSyncResult(layer.id, "cloned", f"ref={layer.ref}")
+        return LayerSyncResult(
+            layer.id, "error", str(exc),
+            role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+        )
+    return LayerSyncResult(
+        layer.id, "cloned", _ref_detail(layer, resolved_ref),
+        role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+    )
 
 
 def sync_all(

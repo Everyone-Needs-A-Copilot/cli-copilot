@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import typer
 from rich.console import Console
 
 from . import __version__
 from .shared import usage_ledger
+
+if TYPE_CHECKING:
+    from .config.layers import CliLayer
+    from .config.store_readiness import StoreReadiness
 
 app = typer.Typer(
     name="copilot",
@@ -295,25 +301,98 @@ def layers() -> None:
 
 # --- Mirror sync (`copilot update`) ---
 
+UPDATE_SCHEMA_VERSION = 1
+
+
+def _run_update() -> tuple[list[CliLayer] | None, list, StoreReadiness]:
+    """Run the sync + store-readiness check exactly once, shared by both the
+    human and `--json` render paths so `copilot update --json` can never
+    perform a second (redundant, and for the never-destroy gate, entirely
+    unnecessary) sync pass."""
+    from .config.layers import resolve_cli_layer_chain
+    from .config.store_readiness import check_store_readiness
+    from .config.sync import sync_all
+
+    chain = resolve_cli_layer_chain()
+    results = sync_all(chain) if chain else []
+    readiness = check_store_readiness(chain or [])
+    return chain, results, readiness
+
+
+def _build_update_payload(
+    chain: list[CliLayer] | None, results: list, readiness: StoreReadiness
+) -> dict:
+    """Build the `copilot update --json` payload -- parse-not-compute
+    friendly for Control Tower (invariant #1): every field here is already
+    resolved by `config/sync.py`/`config/store_readiness.py`, never
+    recomputed by a renderer.
+
+    See `docs/schemas/update.schema.json` for the frozen JSON Schema this
+    payload conforms to.
+    """
+    actions = {r.action for r in results}
+    if "error" in actions:
+        overall = "error"
+    elif actions & {"held", "skipped"}:
+        overall = "attention"
+    else:
+        overall = "ok"
+
+    return {
+        "schema_version": UPDATE_SCHEMA_VERSION,
+        "component": "cli",
+        "overall": overall,
+        "layers": [
+            {
+                "id": r.layer_id,
+                "role": r.role,
+                "ref": r.ref,
+                "resolved_ref": r.resolved_ref,
+                "action": r.action,
+                "detail": r.detail,
+            }
+            for r in results
+        ],
+        "store": {
+            "status": readiness.status,
+            "detail": readiness.detail,
+            "layer_id": readiness.layer_id,
+        },
+    }
+
 
 @app.command()
 def update() -> None:
     """Sync each resolved CLI tier's read-only mirror from its declared source.
 
     Never-destroy (invariant #2/#3): a mirror whose git working tree is
-    DIRTY is HELD -- zero writes, reported, and skipped. Only a clean or
-    absent mirror is touched, and only ever cloned or pulled -- this never
-    pushes, and never touches an author's personal working tree.
+    DIRTY -- or clean but carrying unpushed local commits -- is HELD: zero
+    writes, reported, and skipped. Only a clean or absent mirror is touched,
+    and only ever cloned or pulled -- this never pushes, and never touches
+    an author's personal working tree.
 
-    Concrete refs only (branch / exact tag / SHA) for now: a semver-RANGE
-    `source.ref` (e.g. the live foundation layer's `^1.4.5`) is reported
-    `skipped` -- resolving ranges is a separate follow-up. See
-    `config/sync.py` for the per-layer sync logic this wraps.
+    A semver-RANGE `source.ref` (e.g. the live foundation layer's `^1.4.5`)
+    is resolved to the HIGHEST matching tag first (`config/semver.py`); if
+    no tag satisfies the range, the layer is reported `skipped`, never a
+    crash and never a write. See `config/sync.py` for the per-layer sync
+    logic this wraps.
+
+    Also reports managed-secret-store readiness (presence-only: is store
+    config declared, are bootstrap credentials present on this machine) --
+    never provisions, never performs a network auth, never prints a secret
+    value. See `config/store_readiness.py`.
+
+    `--json` emits a versioned payload (see `docs/schemas/update.schema.
+    json`) for Control Tower to render (invariant #1: parse, never
+    compute); human output stays this compact per-layer summary.
     """
-    from .config.layers import resolve_cli_layer_chain
-    from .config.sync import sync_all
+    from .shared.output import is_json_mode, print_json
 
-    chain = resolve_cli_layer_chain()
+    chain, results, readiness = _run_update()
+
+    if is_json_mode():
+        print_json(_build_update_payload(chain, results, readiness))
+        return
 
     if not chain:
         console.print(
@@ -323,6 +402,8 @@ def update() -> None:
         return
 
     console.print("[bold]Syncing CLI tier mirrors[/bold]\n")
-    for result in sync_all(chain):
+    for result in results:
         console.print(f"  {result.layer_id:.<24s} {result.describe()}")
+    console.print()
+    console.print(f"  {readiness.detail}")
     console.print()

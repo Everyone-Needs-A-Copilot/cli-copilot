@@ -243,12 +243,19 @@ class TestPull:
 
 
 # ------------------------------------------------------------------ #
-# sync_layer -- semver range skip
+# sync_layer -- semver range: no matching tag
 # ------------------------------------------------------------------ #
+#
+# Range *resolution* (caret/tilde -> specifier -> highest-matching-tag) is
+# covered end-to-end in test_semver.py and TestRangeResolution below; this
+# class only covers the "no tag satisfies the range" no-write outcome.
 
 
 class TestRangeRefSkip:
-    def test_range_ref_is_skipped_without_crash_or_write(self, tmp_path):
+    def test_range_ref_with_no_matching_tag_is_skipped_without_crash_or_write(self, tmp_path):
+        """The remote here has zero tags at all, so `^1.4.5` can never
+        resolve -- must be a clean `skipped`, never a crash, never a
+        write."""
         remote = _init_remote(tmp_path)
         layer = _make_layer(tmp_path, _remote_url(remote), ref="^1.4.5")
 
@@ -256,8 +263,84 @@ class TestRangeRefSkip:
 
         assert result.action == "skipped"
         assert "^1.4.5" in result.detail
-        assert "#2b" in result.detail
+        assert "no tag matches" in result.detail
+        assert result.resolved_ref == ""
         assert not layer.root.exists(), "skipped layer must make zero writes"
+
+
+# ------------------------------------------------------------------ #
+# sync_layer -- semver range: resolves to a concrete tag (#2b)
+# ------------------------------------------------------------------ #
+
+
+def _tag_remote(tmp_path: Path, tags: list[str], name: str = "remote") -> Path:
+    """A `file://`-clonable remote carrying one commit per tag, in order --
+    each tag's commit is a real descendant of the previous one so a `pull`
+    across tags is always a clean fast-forward."""
+    remote = _init_remote(tmp_path, name=name)
+    for tag in tags:
+        (remote / f"{tag}.txt").write_text(f"{tag}\n")
+        _run_git("add", f"{tag}.txt", cwd=remote)
+        _run_git("commit", "-q", "-m", tag, cwd=remote)
+        _run_git("tag", tag, cwd=remote)
+    return remote
+
+
+class TestRangeResolution:
+    def test_caret_range_resolves_and_clones_the_highest_matching_tag(self, tmp_path):
+        remote = _tag_remote(tmp_path, ["v1.4.5", "v1.5.0", "v1.5.9", "v2.0.0"])
+        layer = _make_layer(tmp_path, _remote_url(remote), ref="^1.4.5")
+
+        result = sync_layer(layer, git=GitClient())
+
+        assert result.action == "cloned"
+        assert result.resolved_ref == "v1.5.9"
+        assert "v1.5.9" in result.detail
+        assert "^1.4.5" in result.detail
+        assert (layer.root / "v1.5.9.txt").exists()
+        assert not (layer.root / "v2.0.0.txt").exists()
+
+    def test_resolved_range_re_sync_pulls_the_new_highest_tag(self, tmp_path):
+        """A second `copilot update` after a new tag lands on the remote
+        advances the mirror to the new highest match -- the whole point of
+        pinning to a range instead of one fixed tag."""
+        remote = _tag_remote(tmp_path, ["v1.4.5", "v1.5.0"])
+        layer = _make_layer(tmp_path, _remote_url(remote), ref="^1.4.5")
+        git = GitClient()
+
+        first = sync_layer(layer, git=git)
+        assert first.action == "cloned"
+        assert first.resolved_ref == "v1.5.0"
+
+        (remote / "v1.5.9.txt").write_text("v1.5.9\n")
+        _run_git("add", "v1.5.9.txt", cwd=remote)
+        _run_git("commit", "-q", "-m", "v1.5.9", cwd=remote)
+        _run_git("tag", "v1.5.9", cwd=remote)
+
+        second = sync_layer(layer, git=git)
+
+        assert second.action == "pulled"
+        assert second.resolved_ref == "v1.5.9"
+        assert (layer.root / "v1.5.9.txt").exists()
+
+    def test_held_mirror_still_reports_the_resolved_tag(self, tmp_path):
+        """The never-destroy gate holds a dirty resolved-range mirror same
+        as a concrete-ref one -- `resolved_ref` is still reported for
+        visibility even though nothing was written."""
+        remote = _tag_remote(tmp_path, ["v1.4.5", "v1.5.0"])
+        layer = _make_layer(tmp_path, _remote_url(remote), ref="^1.4.5")
+        git = GitClient()
+
+        cloned = sync_layer(layer, git=git)
+        assert cloned.action == "cloned"
+
+        (layer.root / "scratch.txt").write_text("uncommitted\n")
+
+        result = sync_layer(layer, git=git)
+
+        assert result.action == "held"
+        assert result.resolved_ref == "v1.5.0"
+        assert result.ref == "^1.4.5"
 
 
 # ------------------------------------------------------------------ #

@@ -254,7 +254,11 @@ def test_update_holds_dirty_mirror_and_makes_zero_writes(tmp_path, monkeypatch):
     assert before == after, "held mirror must make zero writes"
 
 
-def test_update_range_ref_is_skipped(tmp_path, monkeypatch):
+def test_update_range_ref_with_no_matching_tag_is_skipped(tmp_path, monkeypatch):
+    """The scratch remote here carries zero tags, so the declared `^1.4.5`
+    range can never resolve -- reported `skipped`, never a crash, never a
+    write (#2b: resolution itself is covered in test_config/test_sync.py
+    and test_config/test_semver.py)."""
     remote = _init_remote(tmp_path)
     manifest = tmp_path / "copilot.layers.yml"
     _write_cli_manifest(manifest, f"file://{remote}", ref="^1.4.5")
@@ -267,5 +271,155 @@ def test_update_range_ref_is_skipped(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert "skipped" in result.output
-    assert "#2b" in result.output
+    assert "no tag matches" in result.output
     assert not (copilot_home / "mirrors" / "cli" / "foundation").exists()
+
+
+def test_update_json_reports_versioned_payload(tmp_path, monkeypatch):
+    """`copilot --json update` emits the versioned per-layer + store-
+    readiness payload -- Control Tower renders this, never recomputes it
+    (invariant #1)."""
+    remote = _init_remote(tmp_path)
+    manifest = tmp_path / "copilot.layers.yml"
+    _write_cli_manifest(manifest, f"file://{remote}")
+    copilot_home = tmp_path / "copilot-home"
+
+    monkeypatch.setenv("COPILOT_LAYERS_FILE", str(manifest))
+    monkeypatch.setenv("COPILOT_MIRRORS_ROOT", str(copilot_home))
+
+    try:
+        result = runner.invoke(app, ["--json", "update"])
+    finally:
+        set_json_mode(False)
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output.strip())
+    assert payload["schema_version"] == 1
+    assert payload["component"] == "cli"
+    assert payload["overall"] == "ok"
+    assert len(payload["layers"]) == 1
+    layer = payload["layers"][0]
+    assert layer["id"] == "foundation"
+    assert layer["role"] == "foundation"
+    assert layer["ref"] == "main"
+    assert layer["resolved_ref"] == "main"
+    assert layer["action"] == "cloned"
+    assert payload["store"] == {"status": "none", "detail": "store: none declared", "layer_id": None}
+
+
+def test_update_json_no_manifest_reports_empty_layers(tmp_path, monkeypatch):
+    monkeypatch.delenv("COPILOT_LAYERS_FILE", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / ".git").mkdir()
+    monkeypatch.chdir(project_dir)
+
+    try:
+        result = runner.invoke(app, ["--json", "update"])
+    finally:
+        set_json_mode(False)
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output.strip())
+    assert payload["layers"] == []
+    assert payload["overall"] == "ok"
+    assert payload["store"]["status"] == "none"
+
+
+def test_update_human_output_reports_store_readiness_line(tmp_path, monkeypatch):
+    remote = _init_remote(tmp_path)
+    manifest = tmp_path / "copilot.layers.yml"
+    _write_cli_manifest(manifest, f"file://{remote}")
+    copilot_home = tmp_path / "copilot-home"
+
+    monkeypatch.setenv("COPILOT_LAYERS_FILE", str(manifest))
+    monkeypatch.setenv("COPILOT_MIRRORS_ROOT", str(copilot_home))
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 0
+    assert "store: none declared" in result.output
+
+
+# ------------------------------------------------------------------ #
+# `copilot update` -- V-4 fan-out acceptance: one shared mirror serves
+# every project that enrolls the same layer id, so a single `copilot
+# update` propagates to all of them.
+# ------------------------------------------------------------------ #
+
+
+def test_update_fan_out_propagates_to_every_enrolled_project(tmp_path, monkeypatch):
+    """Two independent projects (separate CWDs, separate manifests) both
+    enroll the SAME layer id against the SAME source repo -- so they share
+    one physical mirror (`_mirror_root` keys purely off layer id under
+    `COPILOT_MIRRORS_ROOT`). Pushing a new tag to the shared remote and
+    running `copilot update` once (from project A) must be visible from
+    BOTH projects' resolution -- one update, every enrolled project."""
+    remote = _init_remote(tmp_path)
+    _run_git("tag", "v1.0.0", cwd=remote)
+
+    copilot_home = tmp_path / "copilot-home"  # ONE shared mirror root
+    monkeypatch.setenv("COPILOT_MIRRORS_ROOT", str(copilot_home))
+
+    project_a = tmp_path / "project-a"
+    project_a.mkdir()
+    (project_a / ".git").mkdir()
+    manifest_a = project_a / "copilot.layers.yml"
+    _write_cli_manifest(manifest_a, f"file://{remote}", ref="^1.0.0")
+
+    project_b = tmp_path / "project-b"
+    project_b.mkdir()
+    (project_b / ".git").mkdir()
+    manifest_b = project_b / "copilot.layers.yml"
+    _write_cli_manifest(manifest_b, f"file://{remote}", ref="^1.0.0")
+
+    monkeypatch.delenv("COPILOT_LAYERS_FILE", raising=False)
+
+    # Initial `copilot update` from project A resolves and clones v1.0.0.
+    monkeypatch.chdir(project_a)
+    first = runner.invoke(app, ["update"])
+    assert first.exit_code == 0
+    assert "cloned" in first.output
+
+    mirror = copilot_home / "mirrors" / "cli" / "foundation"
+    assert not (mirror / "SECOND.md").exists()
+
+    # A new patch tag lands on the shared remote.
+    (remote / "SECOND.md").write_text("second commit\n")
+    _run_git("add", "SECOND.md", cwd=remote)
+    _run_git("commit", "-q", "-m", "second", cwd=remote)
+    _run_git("tag", "v1.0.1", cwd=remote)
+
+    # ONE `copilot update`, run from project A.
+    second = runner.invoke(app, ["update"])
+    assert second.exit_code == 0
+    assert "pulled" in second.output
+
+    # Project A's own resolution reflects it directly.
+    resolved_a = runner.invoke(app, ["--json", "layers"])
+    set_json_mode(False)
+    assert resolved_a.exit_code == 0
+    assert (mirror / "SECOND.md").exists()
+
+    # Project B never ran `update` itself -- but it enrolls the SAME layer
+    # id against the SAME mirror root, so its OWN resolution already
+    # reflects the update too.
+    from copilot_cli.config.layers import resolve_cli_layer_chain
+
+    monkeypatch.chdir(project_b)
+    resolved_b = runner.invoke(app, ["--json", "layers"])
+    set_json_mode(False)
+    assert resolved_b.exit_code == 0
+    payload_b = json.loads(resolved_b.output.strip())
+    assert payload_b["chain"][0]["id"] == "foundation"
+
+    b_chain = resolve_cli_layer_chain()
+    assert b_chain[0].root == mirror, "project B's resolved mirror root IS project A's"
+    assert (b_chain[0].root / "SECOND.md").exists(), (
+        "one `copilot update` (run only from project A) propagated to project B's "
+        "own resolved mirror -- proving one shared mirror serves every enrolled project"
+    )

@@ -90,6 +90,26 @@ class TestGitClientClone:
         with pytest.raises(CopilotError, match="Clone failed"):
             git_client.clone(url="https://bad.url", path="/tmp/nope")
 
+    @patch("copilot_cli.services.git.client.Repo")
+    def test_clone_of_exact_tag_reports_requested_ref_not_crash(
+        self, mock_repo_cls, git_client, tmp_path
+    ):
+        """Cloning an exact tag/SHA (e.g. a semver-range ref resolved by
+        `config/semver.py`, #2b) leaves HEAD detached -- a successful clone
+        must never be turned into a `CopilotError` by that, and must report
+        the ref that was actually requested."""
+        fake_repo = MagicMock()
+        type(fake_repo).active_branch = PropertyMock(
+            side_effect=TypeError("HEAD is a detached symbolic reference")
+        )
+        fake_repo.head.commit.hexsha = "deadbeef"
+        mock_repo_cls.clone_from.return_value = fake_repo
+
+        dest = str(tmp_path / "repo")
+        result = git_client.clone(url="https://github.com/x/y.git", path=dest, branch="v1.5.0")
+
+        assert result["branch"] == "v1.5.0"
+
 
 # ------------------------------------------------------------------ #
 # Client -- pull
@@ -220,6 +240,93 @@ class TestGitClientStatus:
         assert result["tracking"] == "origin/main"
         assert result["ahead"] == 2
         assert result["behind"] == 1
+
+    @patch.object(GitClient, "_open_repo")
+    def test_status_detached_head_reports_commit_not_crash(self, mock_open, git_client):
+        """A mirror pinned to an exact tag/SHA is a detached HEAD -- status()
+        must report it (commit sha, no tracking/ahead/behind), never raise,
+        so `config/sync.py`'s never-destroy gate doesn't permanently HOLD a
+        legitimate resolved-range mirror as 'status unknown' (#2b)."""
+        repo = MagicMock()
+        type(repo).active_branch = PropertyMock(
+            side_effect=TypeError("HEAD is a detached symbolic reference")
+        )
+        repo.head.commit.hexsha = "abc123def456"
+        repo.index.diff.return_value = []
+        repo.untracked_files = []
+        mock_open.return_value = repo
+
+        result = git_client.status(path="/repo")
+
+        assert result["current"] == "abc123def456"
+        assert result["tracking"] == ""
+        assert result["ahead"] == 0
+        assert result["behind"] == 0
+
+
+# ------------------------------------------------------------------ #
+# Client -- list_tags
+# ------------------------------------------------------------------ #
+
+
+class TestGitClientListTags:
+    """Tests for GitClient.list_tags()."""
+
+    @patch("copilot_cli.services.git.client.Git")
+    def test_list_tags_parses_ls_remote_output(self, mock_git_cls, git_client):
+        mock_git_cls.return_value.ls_remote.return_value = (
+            "abc111\trefs/tags/v1.4.5\n"
+            "abc222\trefs/tags/v1.5.0\n"
+            "abc222deref\trefs/tags/v1.5.0^{}\n"  # annotated-tag pointer
+            "abc333\trefs/heads/main\n"  # a branch -- must be ignored
+        )
+
+        tags = git_client.list_tags("https://github.com/x/y.git")
+
+        assert tags == ["v1.4.5", "v1.5.0"]
+        mock_git_cls.return_value.ls_remote.assert_called_once_with(
+            "--tags", "https://github.com/x/y.git"
+        )
+
+    @patch("copilot_cli.services.git.client.Git")
+    def test_list_tags_empty_output_returns_empty_list(self, mock_git_cls, git_client):
+        mock_git_cls.return_value.ls_remote.return_value = ""
+
+        assert git_client.list_tags("https://github.com/x/y.git") == []
+
+    @patch("copilot_cli.services.git.client.Git")
+    def test_list_tags_failure_raises_copilot_error(self, mock_git_cls, git_client):
+        mock_git_cls.return_value.ls_remote.side_effect = Exception("network error")
+
+        with pytest.raises(CopilotError, match="Listing tags failed"):
+            git_client.list_tags("https://bad.url")
+
+    def test_list_tags_against_a_real_file_remote(self, git_client, tmp_path):
+        """Integration coverage against a real `file://` scratch remote --
+        no network, no mocking of git itself."""
+        import subprocess
+
+        remote = tmp_path / "remote"
+        remote.mkdir()
+
+        def _git(*args):
+            subprocess.run(["git", *args], cwd=remote, check=True, capture_output=True, text=True)
+
+        _git("init", "-q", "-b", "main")
+        _git("config", "user.email", "test@example.com")
+        _git("config", "user.name", "Test")
+        (remote / "f.txt").write_text("1\n")
+        _git("add", "f.txt")
+        _git("commit", "-q", "-m", "one")
+        _git("tag", "v1.0.0")
+        (remote / "f.txt").write_text("2\n")
+        _git("add", "f.txt")
+        _git("commit", "-q", "-m", "two")
+        _git("tag", "v1.1.0")
+
+        tags = git_client.list_tags(f"file://{remote}")
+
+        assert set(tags) == {"v1.0.0", "v1.1.0"}
 
 
 # ------------------------------------------------------------------ #
