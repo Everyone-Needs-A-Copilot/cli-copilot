@@ -217,11 +217,49 @@ class TestLoadTierOverlay:
         assert len(overlay.provides) == 1
         assert overlay.provides[0].service == "coolify"
         assert overlay.provides[0].module == "copilot_overlay_internal.services.coolify.commands"
+        assert overlay.provides[0].config == {}  # no config: block on this entry -- back-compat
 
         assert len(overlay.override) == 1
         assert overlay.override[0].service == "db"
 
         assert overlay.all_requires_secret() == ("USPTO_CLI_API_KEY", "COOLIFY_API_TOKEN")
+
+    def test_provides_config_parses_like_adopt_config(self, tmp_path):
+        """ADR-001: `provides[].config` parses with the SAME shape/normalization
+        as `adopt[].config` -- string-keyed, string-valued, defaulting empty."""
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {
+                    "version": 1,
+                    "provides": [
+                        {
+                            "service": "coolify",
+                            "module": "copilot_overlay_internal.services.coolify.commands",
+                            "config": {"coolify_base_url": "https://coolify.acme.example"},
+                        }
+                    ],
+                }
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.provides[0].config == {"coolify_base_url": "https://coolify.acme.example"}
+
+    def test_provides_without_config_key_defaults_empty(self, tmp_path):
+        """A `provides:` entry with no `config:` key at all (not even an empty
+        mapping) still parses to `config == {}` -- the pre-ADR-001 shape."""
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {
+                    "provides": [
+                        {"service": "coolify", "module": "pkg.mod"},
+                    ]
+                }
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.provides[0].config == {}
 
     def test_all_requires_secret_dedupes_preserving_order(self, tmp_path):
         overlay_path = tmp_path / "cli.overlay.yml"

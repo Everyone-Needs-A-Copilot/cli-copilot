@@ -68,6 +68,8 @@ Each resolved layer is expected to contribute, at its local mirror root
       - service: coolify
         module: copilot_overlay_internal.services.coolify.commands
         help: "Coolify infrastructure operations"
+        config:                          # non-secret, same shape/fold as adopt's config: (ADR-001)
+          coolify_base_url: https://coolify.acme.example
         requires_secret:
           - COOLIFY_API_TOKEN
 
@@ -308,6 +310,7 @@ class OverlayProvide:
     service: str
     module: str
     help: str = ""
+    config: dict[str, str] = field(default_factory=dict)
     requires_secret: tuple[str, ...] = ()
     requires_secret_hints: dict[str, str] = field(default_factory=dict)
 
@@ -468,6 +471,7 @@ def load_tier_overlay(overlay_path: Path) -> TierOverlay:
                     service=str(e["service"]),
                     module=str(e["module"]),
                     help=str(e.get("help", "")),
+                    config={str(k): str(v) for k, v in (e.get("config") or {}).items()},
                     requires_secret=names,
                     requires_secret_hints=hints,
                 )

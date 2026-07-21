@@ -122,11 +122,15 @@ class SecretRefSource(PydanticBaseSettingsSource):
 
 
 class TierConfigSource(PydanticBaseSettingsSource):
-    """Surfaces ONE tier's committed `cli.overlay.yml` `adopt[].config` block
-    as a settings source -- the config-inheritance counterpart to
-    `SecretRefSource`. This is what lets non-secret store/service config
-    (e.g. `infisical_workspace_id`) inherit down-tier from a committed
-    overlay instead of only ever living in that tier's local `.env`.
+    """Surfaces ONE tier's committed `cli.overlay.yml` `adopt[].config` AND
+    `provides[].config` blocks as a settings source -- the config-inheritance
+    counterpart to `SecretRefSource`. This is what lets non-secret
+    store/service config (e.g. `infisical_workspace_id`) inherit down-tier
+    from a committed overlay instead of only ever living in that tier's
+    local `.env`. `provides[].config` (ADR-001) works identically to
+    `adopt[].config` -- same shape, same fold -- so a tier's own
+    `provides:`-declared service can also ship its non-secret config in the
+    committed overlay, not just an `adopt:`-declared one.
 
     Unlike `SecretRefSource` (which spans the whole chain), one instance
     covers exactly one layer, so `settings_customise_sources` can interleave
@@ -149,10 +153,26 @@ class TierConfigSource(PydanticBaseSettingsSource):
 
     @staticmethod
     def _collect_config(layer: CliLayer) -> dict[str, str]:
+        """Fold this layer's `adopt[].config` then `provides[].config`,
+        `dict.update` (last-write-wins) within each list and across the two.
+
+        Same-tier adopt-vs-provides collision rule (ADR-001, an authoring
+        edge case -- both blocks live in the same tier's single overlay
+        file): **provides wins**. `provides` is processed after `adopt`,
+        matching the canonical `adopt:` -> `provides:` -> `override:`
+        declaration order documented at the top of this module, so a later
+        block in the same file naturally overrides an earlier one -- the
+        same last-write-wins reading `dict.update` already gives adopt
+        entries against each other. `provides` config is also arguably the
+        more specific declaration: it belongs to a service the tier itself
+        implements, vs. `adopt`'s tuning of a shared base service.
+        """
         overlay = load_tier_overlay(layer.overlay_path)
         merged: dict[str, str] = {}
         for adopt in overlay.adopt:
             merged.update(adopt.config)
+        for provide in overlay.provides:
+            merged.update(provide.config)
         return merged
 
     def get_field_value(self, field, field_name: str) -> tuple[object, str, bool]:

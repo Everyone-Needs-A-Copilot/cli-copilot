@@ -186,12 +186,17 @@ def _find_store_layer(chain: list[CliLayer]):
     the nearest tier.
 
     Store config is folded from TWO places per layer, config-wins: the
-    layer's committed ``cli.overlay.yml`` ``adopt[].config`` (config
-    inheritance -- lets a tier ship its store config in the repo, with no
-    local `.env` required at all) merged OVER that same layer's plain
-    `.env`. This mirrors `settings.py`'s per-tier `TierConfigSource` /
-    `DotEnvSettingsSource` interleave (config outranks its own tier's
-    `.env`) so the store-config gate agrees with the Settings fold.
+    layer's committed ``cli.overlay.yml`` ``adopt[].config`` AND
+    ``provides[].config`` (config inheritance, ADR-001 -- lets a tier ship
+    its store config in the repo, with no local `.env` required at all, from
+    either an adopted base service or its own provided one) merged OVER that
+    same layer's plain `.env`. This mirrors `settings.py`'s per-tier
+    `TierConfigSource` / `DotEnvSettingsSource` interleave (config outranks
+    its own tier's `.env`) so the store-config gate agrees with the Settings
+    fold. Within the overlay, `provides[].config` is folded after
+    `adopt[].config` -- same adopt-then-provides, provides-wins precedence
+    as `TierConfigSource._collect_config` -- so the two config folds never
+    disagree on a same-tier collision either.
     `layers.load_tier_overlay` is pure YAML parsing -- no pydantic, no
     `Settings()` construction -- so this import carries no cycle risk back
     into `settings.py` or `secrets_ladder.py`.
@@ -210,6 +215,11 @@ def _find_store_layer(chain: list[CliLayer]):
         overlay_cfg: dict[str, str] = {}
         for adopt in overlay.adopt:
             for key, value in adopt.config.items():
+                upper = key.upper()
+                if upper in wanted:
+                    overlay_cfg[upper] = value
+        for provide in overlay.provides:
+            for key, value in provide.config.items():
                 upper = key.upper()
                 if upper in wanted:
                     overlay_cfg[upper] = value
