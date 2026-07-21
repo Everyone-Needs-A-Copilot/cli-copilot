@@ -8,6 +8,22 @@ Env-var layer (loaded from the project .env via pydantic-settings):
 
 No persistent config file is used for Infisical; all credentials come from
 the environment, keeping secrets out of the filesystem.
+
+ADR-002 (tier-source fallback for `base_url`): this module is self-contained
+by design (`env_prefix="INFISICAL_"`, its own `.env` walk-up) and bypasses
+the layered `copilot_cli.config.settings.Settings` chain entirely, so a
+tier's committed `cli.overlay.yml` `config:` (e.g. the org's
+`infisical_base_url`) never used to reach it -- only a local `.env` copy
+did. `load_settings()` now falls back to that composed overlay value when
+`base_url` has no explicit env/`.env` source, via `_tier_config_value()`.
+That helper reads `load_tier_overlay()` directly (pure YAML, the same
+non-recursive path `copilot_cli.config.managed_store._find_store_layer`
+uses to fold overlay config for the store gate) -- it never constructs the
+full `Settings()` and never touches the managed store, so resolving
+`base_url` (needed to REACH the store) carries no circular-dependency risk.
+An explicit env/`.env` value always wins; the overlay only fills a gap, and
+a lookup failure here never raises -- it just falls through to the
+existing hard default.
 """
 
 from __future__ import annotations
@@ -72,8 +88,53 @@ def _keychain_lookup(name: str) -> str:
         return ""
 
 
+def _tier_config_value(field_name: str) -> str | None:
+    """Read *field_name* (lowercase, `Settings`-field-shaped, e.g.
+    ``"infisical_base_url"``) from the nearest CLI tier's committed
+    `cli.overlay.yml` `config:` block -- ADR-002's non-recursive tier-source
+    fallback.
+
+    Mirrors `copilot_cli.config.managed_store._find_store_layer`'s own fold
+    exactly: per layer (nearest-precedence first), `adopt[].config` then
+    `provides[].config`, last-write-wins within a tier (provides wins on a
+    same-tier collision, matching `TierConfigSource._collect_config`); the
+    first tier with a non-empty value wins across tiers (nearest-wins).
+
+    Deliberately reimplements that small fold locally rather than importing
+    `copilot_cli.config.settings.TierConfigSource` -- this keeps the import
+    surface to exactly `copilot_cli.config.layers` (pure YAML parsing: no
+    pydantic-settings, no `Settings()` construction, no store/network call),
+    so a caller resolving `base_url` -- needed to REACH the store -- can
+    never recurse into it.
+
+    Returns ``None`` when no `copilot.layers.yml` resolves, no tier declares
+    the field, or anything in between raises -- never propagates an
+    exception, so callers can treat a lookup failure exactly like "not
+    configured" and fall through to their prior behavior.
+    """
+    try:
+        from copilot_cli.config.layers import load_tier_overlay, resolve_cli_layer_chain
+
+        chain = resolve_cli_layer_chain()
+        if not chain:
+            return None
+        for layer in chain:
+            overlay = load_tier_overlay(layer.overlay_path)
+            merged: dict[str, str] = {}
+            for adopt in overlay.adopt:
+                merged.update(adopt.config)
+            for provide in overlay.provides:
+                merged.update(provide.config)
+            if merged.get(field_name):
+                return merged[field_name]
+        return None
+    except Exception:
+        return None
+
+
 def load_settings() -> InfisicalSettings:
-    """Load settings, merging env file and environment variables.
+    """Load settings, merging env file, environment variables, and (ADR-002)
+    the composed tier-overlay `config:` fallback for `base_url`.
 
     Keychain fallback for the machine-identity bootstrap credentials
     (invariant #6): `INFISICAL_CLIENT_ID` / `_SECRET` are the one secret pair
@@ -81,9 +142,22 @@ def load_settings() -> InfisicalSettings:
     when they are absent from the environment / `.env` they are resolved from
     the per-user OS keychain -- the same rung the credential ladder uses. An
     explicit env/`.env` value always wins; the keychain only fills a gap.
+
+    `base_url` resolution order (ADR-002, safe-fallback): an explicit
+    env/`.env` value (`model_fields_set` -- distinguishes "provided by some
+    source" from "left at the class default") wins first; else the nearest
+    tier's committed `cli.overlay.yml` `infisical_base_url` (via
+    `_tier_config_value`, pure YAML, no store/network call); else the
+    existing hard default (`_DEFAULT_BASE_URL`). With today's `.env` still
+    populated, this is byte-identical to the pre-ADR-002 behavior -- the
+    fallback only ever activates once `.env` stops setting `INFISICAL_BASE_URL`.
     """
     env_file = find_env_file()
     settings = InfisicalSettings(_env_file=env_file)
+    if "base_url" not in settings.model_fields_set:
+        tier_base_url = _tier_config_value("infisical_base_url")
+        if tier_base_url:
+            settings = settings.model_copy(update={"base_url": tier_base_url})
     if not settings.client_id or not settings.client_secret:
         client_id = settings.client_id or _keychain_lookup("INFISICAL_CLIENT_ID")
         client_secret = settings.client_secret or _keychain_lookup("INFISICAL_CLIENT_SECRET")
