@@ -376,6 +376,76 @@ class InfisicalClient:
         data = await self.delete(f"/api/v1/identities/{identity_id}")
         return data.get("identity", data) if isinstance(data, dict) else data
 
+    async def list_project_roles(self, project_id: str) -> list[dict]:
+        """GET /api/v1/projects/{projectId}/roles."""
+        data = await self.get(f"/api/v1/projects/{project_id}/roles")
+        if not isinstance(data, dict):
+            return []
+        return data.get("roles", data.get("projectRoles", []))
+
+    async def create_project_role(
+        self, project_id: str, *, slug: str, name: str, permissions: list[dict], description: str
+    ) -> dict:
+        """Create a least-privilege custom project role."""
+        data = await self.post(
+            f"/api/v1/projects/{project_id}/roles",
+            {"slug": slug, "name": name, "permissions": permissions, "description": description},
+        )
+        return data.get("role", data) if isinstance(data, dict) else data
+
+    async def list_identity_memberships(self, project_id: str) -> list[dict]:
+        data = await self.get(f"/api/v1/projects/{project_id}/memberships/identities")
+        return data.get("identityMemberships", []) if isinstance(data, dict) else []
+
+    async def add_identity_membership(
+        self, project_id: str, identity_id: str, role_slug: str
+    ) -> dict:
+        data = await self.post(
+            f"/api/v1/projects/{project_id}/memberships/identities/{identity_id}",
+            {
+                "role": "no-access",
+                "roles": [{"role": role_slug, "isTemporary": False}],
+            },
+        )
+        return data.get("identityMembership", data) if isinstance(data, dict) else data
+
+    async def get_universal_auth(self, identity_id: str) -> dict:
+        data = await self.get(f"/api/v1/auth/universal-auth/identities/{identity_id}")
+        return data.get("identityUniversalAuth", data) if isinstance(data, dict) else data
+
+    async def attach_universal_auth(self, identity_id: str) -> dict:
+        data = await self.post(
+            f"/api/v1/auth/universal-auth/identities/{identity_id}",
+            {
+                "clientSecretTrustedIps": [{"ipAddress": "0.0.0.0/0"}, {"ipAddress": "::/0"}],
+                "accessTokenTrustedIps": [{"ipAddress": "0.0.0.0/0"}, {"ipAddress": "::/0"}],
+                "accessTokenTTL": 7200,
+                "accessTokenMaxTTL": 86400,
+                "accessTokenNumUsesLimit": 0,
+                "accessTokenPeriod": 0,
+                "lockoutEnabled": True,
+                "lockoutThreshold": 3,
+                "lockoutDurationSeconds": 300,
+                "lockoutCounterResetSeconds": 30,
+            },
+        )
+        return data.get("identityUniversalAuth", data) if isinstance(data, dict) else data
+
+    async def create_universal_auth_client_secret(
+        self, identity_id: str, description: str
+    ) -> dict:
+        return await self.post(
+            f"/api/v1/auth/universal-auth/identities/{identity_id}/client-secrets",
+            {"description": description, "numUsesLimit": 0, "ttl": 31536000},
+        )
+
+    async def revoke_universal_auth_client_secret(
+        self, identity_id: str, client_secret_id: str
+    ) -> dict:
+        return await self.delete(
+            f"/api/v1/auth/universal-auth/identities/{identity_id}/client-secrets/{client_secret_id}"
+        )
+
     # ─── Admin ────────────────────────────────────────────────────────────
 
     async def get_admin_config(self) -> dict:

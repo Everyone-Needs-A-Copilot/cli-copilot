@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from typing import Annotated
 
 import typer
@@ -99,6 +100,45 @@ def create_identity(
             f"[success]Identity created:[/success] {identity.get('name', name)} "
             f"[uuid]({identity.get('id', '')})[/uuid]"
         )
+    except SystemExit:
+        raise
+    except Exception as e:
+        handle_error(e)
+
+
+@app.command("provision")
+def provision_identity(
+    project_id: Annotated[str, typer.Option("--project", help="Infisical project/workspace ID")],
+    environment: Annotated[str, typer.Option("--environment", help="Allowed environment slug")] = "prod",
+    secret_path: Annotated[str, typer.Option("--secret-path", help="Exact allowed secret path")] = "/shared",
+    name: Annotated[str, typer.Option("--name", help="Stable per-machine identity name")] = "",
+    apply: Annotated[bool, typer.Option("--apply", help="Create and secure missing identity resources")] = False,
+) -> None:
+    """Plan or provision a scoped, revocable identity into the OS keychain."""
+    state, run_async, handle_error = _get_deps()
+    try:
+        from copilot_cli.services.infisical.core.provision import provision_machine_identity
+
+        report = run_async(
+            provision_machine_identity(
+                state.get_client(),
+                project_id=project_id,
+                environment=environment,
+                secret_path=secret_path,
+                name=name or f"copilot-device-{socket.gethostname().lower()}",
+                apply=apply,
+            )
+        )
+        if state.is_json():
+            from copilot_cli.services.infisical.output.json_out import output_data
+
+            output_data(report, state.output_format)
+        else:
+            from copilot_cli.services.infisical.output.console import console
+
+            console.print(f"[bold]{report['result']}[/bold] — scoped device identity")
+        if report.get("result") == "blocked":
+            raise typer.Exit(1)
     except SystemExit:
         raise
     except Exception as e:
