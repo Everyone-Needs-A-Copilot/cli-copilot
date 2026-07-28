@@ -14,7 +14,12 @@ import textwrap
 import pytest
 
 from copilot_cli.config.layers import CliLayer, LayersManifestError
-from copilot_cli.services._loader import _BASE_SERVICES, _compose, load_service
+from copilot_cli.services._loader import (
+    _BASE_SERVICES,
+    _compose,
+    load_service,
+    resolve_cli_services,
+)
 
 
 def _layer(tmp_path, layer_id: str, rank: int, subdir: str | None = None) -> CliLayer:
@@ -96,9 +101,7 @@ class TestComposeAdopt:
 
     def test_adopt_unknown_service_raises(self, tmp_path):
         layer = _layer(tmp_path, "org-acme", rank=30)
-        (layer.root / "cli.overlay.yml").write_text(
-            "adopt:\n  - service: not-a-real-service\n"
-        )
+        (layer.root / "cli.overlay.yml").write_text("adopt:\n  - service: not-a-real-service\n")
         with pytest.raises(LayersManifestError, match="unknown base service"):
             _compose([layer])
 
@@ -132,6 +135,52 @@ class TestComposeProvides:
         # Base 12 are untouched and still present.
         assert len(resolved) == len(_BASE_SERVICES) + 1
 
+    def test_product_manifest_reaches_org_overlay_service(self, tmp_path, monkeypatch):
+        """Exercise the exact aggregate field emitted by ``cc onboard``.
+
+        A product-only CLI entry must reach service composition rather than
+        silently falling back to the public foundation command set.
+        """
+        home = tmp_path / "home"
+        home.mkdir()
+        mirrors_base = tmp_path / "copilot-state"
+        org_root = mirrors_base / "mirrors" / "cli" / "org-internal"
+        org_root.mkdir(parents=True)
+        _write_overlay_pkg(
+            org_root,
+            "copilot_overlay_contract",
+            "services.discord.commands",
+        )
+        (org_root / "cli.overlay.yml").write_text(
+            "provides:\n"
+            "  - service: discord\n"
+            "    module: copilot_overlay_contract.services.discord.commands\n"
+            "    help: Discord handoff threads\n"
+        )
+        manifest = tmp_path / "copilot.layers.yml"
+        manifest.write_text(
+            "version: 1\n"
+            "layers:\n"
+            "  - id: org-internal\n"
+            "    role: org\n"
+            "    product: cli\n"
+            "    rank: 30\n"
+            "    source:\n"
+            "      repo: git@github-work:example/cli-copilot-internal.git\n"
+            "      ref: main\n"
+            "    auth: ssh-work\n"
+        )
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("COPILOT_LAYERS_FILE", str(manifest))
+        monkeypatch.setenv("COPILOT_MIRRORS_ROOT", str(mirrors_base))
+
+        resolved = resolve_cli_services()
+        discord = next(service for service in resolved if service.name == "discord")
+
+        assert discord.tier == "org-internal"
+        assert discord.mode == "provides"
+        assert discord.app is not None
+
     def test_provides_colliding_with_existing_name_without_override_is_refused(self, tmp_path):
         layer = _layer(tmp_path, "org-acme", rank=30)
         _write_overlay_pkg(layer.root, "copilot_overlay_test_collide", "services.uspto.commands")
@@ -147,7 +196,9 @@ class TestComposeProvides:
 class TestComposeOverride:
     def test_override_replaces_base_service_module_keeps_base_help(self, tmp_path):
         layer = _layer(tmp_path, "org-acme", rank=30)
-        _write_overlay_pkg(layer.root, "copilot_overlay_test_override", "services.db_coolify.commands")
+        _write_overlay_pkg(
+            layer.root, "copilot_overlay_test_override", "services.db_coolify.commands"
+        )
         (layer.root / "cli.overlay.yml").write_text(
             "override:\n"
             "  - service: db\n"
@@ -182,7 +233,9 @@ class TestPrecedenceNearestWins:
         (org_layer.root / "cli.overlay.yml").write_text(
             "override:\n  - service: db\n    module: copilot_overlay_org.services.db_org.commands\n"
         )
-        _write_overlay_pkg(personal_layer.root, "copilot_overlay_personal", "services.db_personal.commands")
+        _write_overlay_pkg(
+            personal_layer.root, "copilot_overlay_personal", "services.db_personal.commands"
+        )
         (personal_layer.root / "cli.overlay.yml").write_text(
             "override:\n"
             "  - service: db\n"

@@ -1,4 +1,4 @@
-"""Tier-inheritance manifest resolution for the CLI component.
+"""Tier-inheritance manifest resolution for the CLI product.
 
 Phase 1 of the ratified CLI tier-inheritance model (see the design doc's §1
 "Layered config + secret resolution" and §2 "Connector placement & the
@@ -8,18 +8,20 @@ overlay shape are defined here, once, and reused by both
 `config/settings.py` (layered config/secret sources) and
 `services/_loader.py` (service-discovery loader).
 
-`copilot.layers.yml` is the **same manifest** the content-component resolver
-(claude/knowledge/codex) already uses -- one spine for all four CSE
-components, filtered here to entries whose `component` is ``"cli"``. See
-`four-tier-topology.md` §4 in the `copilot-control-tower` docs for the full
-cross-component schema this is one slice of.
+`copilot.layers.yml` is the **same manifest** the other product resolvers
+(claude/knowledge/codex) already use -- one spine for all four CSE products,
+filtered here to entries whose canonical `product` is ``"cli"``. Legacy
+manifests that only declare `component` remain readable during migration, but
+`product` is the contract of record. See `four-tier-topology.md` §4 in the
+`copilot-control-tower` docs for the full cross-product schema this is one
+slice of.
 
     # copilot.layers.yml -- highest precedence FIRST; rank is the tiebreak of record
     version: 1
     layers:
       - id: personal-pablo
         role: personal              # open vocabulary, not a closed enum
-        component: cli               # the CSE component this layer belongs to -- required
+        product: cli                 # the CSE product this layer belongs to -- required
         rank: 10                    # lower = higher precedence; gaps leave room to insert
         source:
           repo: git@github-personal:pablitoalejo/cli-copilot-private.git
@@ -28,7 +30,7 @@ cross-component schema this is one slice of.
 
       - id: org-acme
         role: org
-        component: cli
+        product: cli
         rank: 30
         source:
           repo: git@github-work:acme-corp/cli-copilot-internal.git
@@ -37,7 +39,7 @@ cross-component schema this is one slice of.
 
       - id: foundation
         role: foundation
-        component: cli
+        product: cli
         rank: 40
         source:
           repo: https://github.com/Everyone-Needs-A-Copilot/cli-copilot.git
@@ -79,7 +81,7 @@ Each resolved layer is expected to contribute, at its local mirror root
 
 Precedence for both the config fold and the service fold is **nearest-tier
 wins**: PERSONAL > DEPARTMENT > ORG > FOUNDATION, identical to the ratified
-content-component resolver. `resolve_cli_layer_chain()` returns layers in
+cross-product resolver. `resolve_cli_layer_chain()` returns layers in
 that order (highest precedence first); callers that fold config/services
 onto a base state should walk the chain **in reverse** (foundation first)
 so a later, higher-precedence tier's contribution naturally wins via normal
@@ -94,7 +96,9 @@ from pathlib import Path
 
 import yaml
 
-COMPONENT = "cli"
+PRODUCT = "cli"
+# Backward-compatible module alias for callers that imported the old name.
+COMPONENT = PRODUCT
 MANIFEST_FILENAME = "copilot.layers.yml"
 OVERLAY_FILENAME = "cli.overlay.yml"
 
@@ -115,7 +119,7 @@ class LayersManifestError(Exception):
 
 @dataclass(frozen=True)
 class CliLayer:
-    """One resolved `component: cli` layer, in precedence order."""
+    """One resolved `product: cli` layer, in precedence order."""
 
     id: str
     role: str
@@ -216,11 +220,17 @@ def _parse_manifest(manifest_path: Path) -> list[dict]:
 
 
 def resolve_cli_layer_chain(manifest_path: Path | str | None = None) -> list[CliLayer] | None:
-    """Resolve the precedence-ordered `component: cli` layer chain.
+    """Resolve the precedence-ordered `product: cli` layer chain.
 
     Returns `None` when:
     - no `copilot.layers.yml` resolves at all, or
-    - one resolves but contains zero `component: cli` entries.
+    - one resolves but contains zero `product: cli` entries.
+
+    `product` is the canonical cross-ecosystem field. A legacy entry that has
+    no `product` may still use `component`; this compatibility path prevents
+    older machine manifests from losing their CLI overlay during rollout.
+    When both fields are present and disagree on a CLI entry, resolution fails
+    loudly instead of silently selecting or dropping a layer.
 
     Both are "no CLI tiering configured" and are the trigger for the
     back-compat fast path in `settings.py` and `services/_loader.py` --
@@ -243,7 +253,27 @@ def resolve_cli_layer_chain(manifest_path: Path | str | None = None) -> list[Cli
         return None
 
     entries = _parse_manifest(path)
-    cli_entries = [e for e in entries if isinstance(e, dict) and e.get("component") == COMPONENT]
+    cli_entries: list[dict] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        product = entry.get("product")
+        legacy_component = entry.get("component")
+        if (
+            product is not None
+            and legacy_component is not None
+            and product != legacy_component
+            and PRODUCT in {product, legacy_component}
+        ):
+            raise LayersManifestError(
+                f"{path}: layer {entry.get('id', '<unknown>')!r} declares conflicting "
+                f"`product` ({product!r}) and legacy `component` "
+                f"({legacy_component!r}); remove `component` and keep the canonical "
+                "`product` value"
+            )
+        resolved_product = product if product is not None else legacy_component
+        if resolved_product == PRODUCT:
+            cli_entries.append(entry)
     if not cli_entries:
         return None
 

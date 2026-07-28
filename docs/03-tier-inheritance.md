@@ -27,7 +27,8 @@ contract.
 ### `copilot.layers.yml` — the tier chain
 
 One manifest, shared across all four CSE components, filtered here to
-`component: cli` entries. See `copilot_cli/config/layers.py`'s module
+`product: cli` entries. Legacy manifests that only carry `component: cli`
+remain readable during migration. See `copilot_cli/config/layers.py`'s module
 docstring for the full annotated example. Precedence is nearest-wins:
 **PERSONAL > DEPARTMENT > ORG > FOUNDATION**, expressed as ascending
 `rank` (lower rank = higher precedence). A duplicate rank among `cli`
@@ -38,7 +39,8 @@ Resolution (`resolve_cli_layer_chain()` in `config/layers.py`):
 
 1. Find the manifest: `COPILOT_LAYERS_FILE` override → walk up from CWD to
    the first project-root marker → standard `$HOME`-relative locations.
-2. Filter to `component: cli`. Parse each entry's `id`, `role`, `rank`,
+2. Filter to canonical `product: cli` (falling back to legacy
+   `component: cli` only when `product` is absent). Parse each entry's `id`, `role`, `rank`,
    `source.repo`, `source.ref`, `auth`, optional `unit`/`activation`.
 3. Sort ascending by `rank`; hard-error on a duplicate.
 4. Return `None` if no manifest resolves, or the manifest has zero `cli`

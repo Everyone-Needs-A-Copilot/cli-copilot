@@ -34,7 +34,7 @@ class TestFindAndResolveNoManifest:
                 {
                     "id": "org-acme",
                     "role": "org",
-                    "component": "claude",  # not "cli"
+                    "product": "claude",  # not "cli"
                     "rank": 30,
                     "source": {"repo": "git@github-work:acme/claude-copilot.git"},
                     "auth": "ssh-work",
@@ -53,15 +53,18 @@ class TestResolveWithCliEntries:
                 {
                     "id": "foundation",
                     "role": "foundation",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 40,
-                    "source": {"repo": "https://github.com/example/cli-copilot.git", "ref": "^1.4.5"},
+                    "source": {
+                        "repo": "https://github.com/example/cli-copilot.git",
+                        "ref": "^1.4.5",
+                    },
                     "auth": "anon",
                 },
                 {
                     "id": "personal-pablo",
                     "role": "personal",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 10,
                     "source": {"repo": "git@github-personal:pablo/cli-copilot-private.git"},
                     "auth": "ssh-personal",
@@ -69,9 +72,12 @@ class TestResolveWithCliEntries:
                 {
                     "id": "org-acme",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
-                    "source": {"repo": "git@github-work:acme/cli-copilot-internal.git", "ref": "v1.x"},
+                    "source": {
+                        "repo": "git@github-work:acme/cli-copilot-internal.git",
+                        "ref": "v1.x",
+                    },
                     "auth": "ssh-work",
                     "unit": "engineering",
                 },
@@ -85,7 +91,7 @@ class TestResolveWithCliEntries:
         assert chain[2].ref == "^1.4.5"
         assert chain[0].auth == "ssh-personal"
 
-    def test_filters_out_non_cli_components(self, tmp_path):
+    def test_filters_out_non_cli_products(self, tmp_path):
         manifest = tmp_path / "copilot.layers.yml"
         _write_manifest(
             manifest,
@@ -93,7 +99,7 @@ class TestResolveWithCliEntries:
                 {
                     "id": "cli-foundation",
                     "role": "foundation",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 40,
                     "source": {"repo": "https://github.com/example/cli-copilot.git"},
                     "auth": "anon",
@@ -101,7 +107,7 @@ class TestResolveWithCliEntries:
                 {
                     "id": "claude-foundation",
                     "role": "foundation",
-                    "component": "claude",
+                    "product": "claude",
                     "rank": 40,
                     "source": {"repo": "https://github.com/example/claude-copilot.git"},
                     "auth": "anon",
@@ -112,6 +118,47 @@ class TestResolveWithCliEntries:
         assert chain is not None
         assert [layer.id for layer in chain] == ["cli-foundation"]
 
+    def test_legacy_component_field_remains_readable(self, tmp_path):
+        manifest = tmp_path / "copilot.layers.yml"
+        _write_manifest(
+            manifest,
+            [
+                {
+                    "id": "legacy-org",
+                    "role": "org",
+                    "component": "cli",
+                    "rank": 30,
+                    "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
+                    "auth": "ssh-work",
+                }
+            ],
+        )
+
+        chain = resolve_cli_layer_chain(manifest)
+
+        assert chain is not None
+        assert [layer.id for layer in chain] == ["legacy-org"]
+
+    def test_conflicting_product_and_legacy_component_is_a_hard_error(self, tmp_path):
+        manifest = tmp_path / "copilot.layers.yml"
+        _write_manifest(
+            manifest,
+            [
+                {
+                    "id": "ambiguous-layer",
+                    "role": "org",
+                    "product": "cli",
+                    "component": "claude",
+                    "rank": 30,
+                    "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
+                    "auth": "ssh-work",
+                }
+            ],
+        )
+
+        with pytest.raises(LayersManifestError, match="conflicting"):
+            resolve_cli_layer_chain(manifest)
+
     def test_duplicate_rank_among_cli_layers_is_a_hard_error(self, tmp_path):
         manifest = tmp_path / "copilot.layers.yml"
         _write_manifest(
@@ -120,7 +167,7 @@ class TestResolveWithCliEntries:
                 {
                     "id": "org-a",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:a/cli-copilot-a.git"},
                     "auth": "ssh-work",
@@ -128,7 +175,7 @@ class TestResolveWithCliEntries:
                 {
                     "id": "org-b",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:b/cli-copilot-b.git"},
                     "auth": "ssh-work",
@@ -146,7 +193,7 @@ class TestResolveWithCliEntries:
                 {
                     "id": "org-acme",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     # missing 'source' entirely
                     "auth": "ssh-work",
@@ -340,7 +387,11 @@ class TestRequiresSecretRoutingHint:
         overlay_path = tmp_path / "cli.overlay.yml"
         overlay_path.write_text(
             yaml.safe_dump(
-                {"adopt": [{"service": "uspto", "requires_secret": [{"name": "X", "from": "store"}]}]}
+                {
+                    "adopt": [
+                        {"service": "uspto", "requires_secret": [{"name": "X", "from": "store"}]}
+                    ]
+                }
             )
         )
         overlay = load_tier_overlay(overlay_path)
@@ -387,7 +438,11 @@ class TestRequiresSecretRoutingHint:
         overlay_path = tmp_path / "cli.overlay.yml"
         overlay_path.write_text(
             yaml.safe_dump(
-                {"adopt": [{"service": "uspto", "requires_secret": [{"name": "X", "from": "cloud"}]}]}
+                {
+                    "adopt": [
+                        {"service": "uspto", "requires_secret": [{"name": "X", "from": "cloud"}]}
+                    ]
+                }
             )
         )
         with pytest.raises(LayersManifestError, match="'from' must be one of"):
@@ -396,7 +451,9 @@ class TestRequiresSecretRoutingHint:
     def test_mapping_entry_missing_name_raises(self, tmp_path):
         overlay_path = tmp_path / "cli.overlay.yml"
         overlay_path.write_text(
-            yaml.safe_dump({"adopt": [{"service": "uspto", "requires_secret": [{"from": "keychain"}]}]})
+            yaml.safe_dump(
+                {"adopt": [{"service": "uspto", "requires_secret": [{"from": "keychain"}]}]}
+            )
         )
         with pytest.raises(LayersManifestError, match="missing required key 'name'"):
             load_tier_overlay(overlay_path)
@@ -418,7 +475,10 @@ class TestRequiresSecretRoutingHint:
             yaml.safe_dump(
                 {
                     "adopt": [
-                        {"service": "a", "requires_secret": [{"name": "SHARED", "from": "keychain"}]}
+                        {
+                            "service": "a",
+                            "requires_secret": [{"name": "SHARED", "from": "keychain"}],
+                        }
                     ],
                     "provides": [
                         {

@@ -170,7 +170,7 @@ Set `COPILOT_USAGE_LOG=1` to append one JSON line per invocation to
 `~/.copilot-cli/usage.jsonl` (override the path with `COPILOT_USAGE_LOG_PATH`):
 
 ```json
-{"ts": "2026-07-12T15:57:02.694324Z", "cmd": "git status", "exit_code": 0, "duration_ms": 85, "version": "1.4.5"}
+{"ts": "2026-07-12T15:57:02.694324Z", "cmd": "git status", "exit_code": 0, "duration_ms": 85, "version": "1.4.6"}
 ```
 
 `cmd` is the resolved command path only (group + subcommand names) — never
