@@ -149,9 +149,7 @@ class TestNeverDestroyGate:
         assert result.action == "held"
         assert before == after
 
-    def test_holds_clean_mirror_with_unpushed_commits_that_would_conflict(
-        self, tmp_path
-    ):
+    def test_holds_clean_mirror_with_unpushed_commits_that_would_conflict(self, tmp_path):
         """F5: a mirror whose working tree is CLEAN but that carries a local
         commit unknown to the remote (`ahead > 0`) must be HELD, even though
         `_is_dirty` alone would say it's clean. A read-only consumer mirror
@@ -171,6 +169,8 @@ class TestNeverDestroyGate:
         # a read-only mirror, but the gate must not assume that). Modify the
         # same line the remote is about to change, so a pull would conflict.
         (layer.root / "README.md").write_text("locally committed change\n")
+        _run_git("config", "user.email", "test@example.com", cwd=layer.root)
+        _run_git("config", "user.name", "Test", cwd=layer.root)
         _run_git("add", "README.md", cwd=layer.root)
         _run_git("commit", "-q", "-m", "stray local commit", cwd=layer.root)
 
@@ -188,9 +188,9 @@ class TestNeverDestroyGate:
         assert before == after, "held layer must make zero writes"
 
         # No conflict markers written into the tracked file.
-        assert (
-            "<<<<<<<" not in (layer.root / "README.md").read_text()
-        ), "must not have started a merge/rebase that wrote conflict markers"
+        assert "<<<<<<<" not in (layer.root / "README.md").read_text(), (
+            "must not have started a merge/rebase that wrote conflict markers"
+        )
 
         # No mid-rebase/mid-merge state left behind in .git.
         git_dir = layer.root / ".git"
@@ -353,9 +353,7 @@ class TestSyncAll:
         remote_a = _init_remote(tmp_path, name="remote-a")
         remote_b = _init_remote(tmp_path, name="remote-b")
         layer_a = _make_layer(tmp_path, _remote_url(remote_a), layer_id="org-acme")
-        layer_b = _make_layer(
-            tmp_path, _remote_url(remote_b), ref="^1.4.5", layer_id="foundation"
-        )
+        layer_b = _make_layer(tmp_path, _remote_url(remote_b), ref="^1.4.5", layer_id="foundation")
 
         results = sync_all(chain=[layer_a, layer_b], git=GitClient())
 

@@ -60,7 +60,9 @@ class TestKeychainRung:
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.platform", "darwin")
 
         def fake_run(*args, **kwargs):
-            return subprocess.CompletedProcess(args, returncode=0, stdout="s3cr3t-value\n", stderr="")
+            return subprocess.CompletedProcess(
+                args, returncode=0, stdout="s3cr3t-value\n", stderr=""
+            )
 
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.subprocess.run", fake_run)
         assert _rung_keychain("SOME_NAME", chain=[]) == "s3cr3t-value"
@@ -106,7 +108,9 @@ class TestResolveSecretFailsClosed:
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.platform", "darwin")
 
         def fake_run(*args, **kwargs):
-            return subprocess.CompletedProcess(args, returncode=0, stdout="from-keychain\n", stderr="")
+            return subprocess.CompletedProcess(
+                args, returncode=0, stdout="from-keychain\n", stderr=""
+            )
 
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.subprocess.run", fake_run)
         assert resolve_secret("SOME_NAME", chain=[]) == "from-keychain"
@@ -131,11 +135,15 @@ class TestPreferRoutingHint:
             calls["store"] += 1
             raise AssertionError("managed-store rung must not be consulted for a keychain hint")
 
-        monkeypatch.setattr("copilot_cli.config.managed_store.resolve_from_store", _must_not_be_called)
+        monkeypatch.setattr(
+            "copilot_cli.config.managed_store.resolve_from_store", _must_not_be_called
+        )
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.platform", "darwin")
 
         def fake_run(*args, **kwargs):
-            return subprocess.CompletedProcess(args, returncode=0, stdout="from-keychain\n", stderr="")
+            return subprocess.CompletedProcess(
+                args, returncode=0, stdout="from-keychain\n", stderr=""
+            )
 
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.subprocess.run", fake_run)
 
@@ -180,7 +188,9 @@ class TestPreferRoutingHint:
             calls["store"] += 1
             raise AssertionError("managed-store rung must not be consulted for a keychain hint")
 
-        monkeypatch.setattr("copilot_cli.config.managed_store.resolve_from_store", _must_not_be_called)
+        monkeypatch.setattr(
+            "copilot_cli.config.managed_store.resolve_from_store", _must_not_be_called
+        )
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.platform", "darwin")
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.stdin", _NonInteractiveStdin())
 
@@ -200,7 +210,9 @@ class TestPreferRoutingHint:
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.sys.platform", "darwin")
 
         def fake_run(*args, **kwargs):
-            return subprocess.CompletedProcess(args, returncode=0, stdout="from-keychain\n", stderr="")
+            return subprocess.CompletedProcess(
+                args, returncode=0, stdout="from-keychain\n", stderr=""
+            )
 
         monkeypatch.setattr("copilot_cli.config.secrets_ladder.subprocess.run", fake_run)
         assert resolve_secret("SOME_NAME", chain=[]) == "from-keychain"

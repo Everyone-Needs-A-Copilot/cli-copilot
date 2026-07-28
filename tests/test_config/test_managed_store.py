@@ -16,7 +16,9 @@ import pytest
 import copilot_cli.config.managed_store as ms
 from copilot_cli.config.layers import CliLayer
 from copilot_cli.config.managed_store import StoreUnavailable, resolve_from_store
-from copilot_cli.services.infisical.core.exceptions import ConnectionError as InfisicalConnectionError
+from copilot_cli.services.infisical.core.exceptions import (
+    ConnectionError as InfisicalConnectionError,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -47,9 +49,7 @@ def _no_real_keychain(monkeypatch):
 def _layer(tmp: Path, env_text: str, layer_id: str = "org", rank: int = 30) -> CliLayer:
     tmp.mkdir(parents=True, exist_ok=True)
     (tmp / ".env").write_text(env_text)
-    return CliLayer(
-        id=layer_id, role="org", rank=rank, repo="r", ref="main", auth="anon", root=tmp
-    )
+    return CliLayer(id=layer_id, role="org", rank=rank, repo="r", ref="main", auth="anon", root=tmp)
 
 
 _STORE_ENV = (
@@ -115,8 +115,14 @@ class TestDormant:
 class TestRecursionGuard:
     @pytest.mark.parametrize(
         "name",
-        ["INFISICAL_CLIENT_ID", "INFISICAL_CLIENT_SECRET", "INFISICAL_BASE_URL",
-         "INFISICAL_WORKSPACE_ID", "INFISICAL_ENVIRONMENT", "INFISICAL_SECRET_PATH"],
+        [
+            "INFISICAL_CLIENT_ID",
+            "INFISICAL_CLIENT_SECRET",
+            "INFISICAL_BASE_URL",
+            "INFISICAL_WORKSPACE_ID",
+            "INFISICAL_ENVIRONMENT",
+            "INFISICAL_SECRET_PATH",
+        ],
     )
     def test_bootstrap_names_never_hit_the_store(self, tmp_path, monkeypatch, name):
         monkeypatch.setattr(
@@ -129,19 +135,25 @@ class TestRecursionGuard:
 
 class TestResolution:
     def test_resolves_named_secret(self, tmp_path, monkeypatch):
-        _install_fake(monkeypatch, secrets=[
-            {"secretKey": "DISCORD_BOT_TOKEN", "secretValue": "tok-abc"},
-            {"secretKey": "NOCODB_API_KEY", "secretValue": "nc-xyz"},
-        ])
+        _install_fake(
+            monkeypatch,
+            secrets=[
+                {"secretKey": "DISCORD_BOT_TOKEN", "secretValue": "tok-abc"},
+                {"secretKey": "NOCODB_API_KEY", "secretValue": "nc-xyz"},
+            ],
+        )
         layer = _layer(tmp_path, _STORE_ENV)
         assert resolve_from_store("DISCORD_BOT_TOKEN", [layer]) == "tok-abc"
         assert resolve_from_store("NOCODB_API_KEY", [layer]) == "nc-xyz"
 
     def test_bulk_fetch_cached_once(self, tmp_path, monkeypatch):
-        fake = _install_fake(monkeypatch, secrets=[
-            {"secretKey": "A", "secretValue": "1"},
-            {"secretKey": "B", "secretValue": "2"},
-        ])
+        fake = _install_fake(
+            monkeypatch,
+            secrets=[
+                {"secretKey": "A", "secretValue": "1"},
+                {"secretKey": "B", "secretValue": "2"},
+            ],
+        )
         layer = _layer(tmp_path, _STORE_ENV)
         assert resolve_from_store("A", [layer]) == "1"
         assert resolve_from_store("B", [layer]) == "2"

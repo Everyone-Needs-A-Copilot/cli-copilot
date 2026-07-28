@@ -304,7 +304,11 @@ def test_update_json_reports_versioned_payload(tmp_path, monkeypatch):
     assert layer["ref"] == "main"
     assert layer["resolved_ref"] == "main"
     assert layer["action"] == "cloned"
-    assert payload["store"] == {"status": "none", "detail": "store: none declared", "layer_id": None}
+    assert payload["store"] == {
+        "status": "none",
+        "detail": "store: none declared",
+        "layer_id": None,
+    }
 
 
 def test_update_json_no_manifest_reports_empty_layers(tmp_path, monkeypatch):

@@ -23,9 +23,7 @@ _REAL_CLIENT_SECRET = "super-secret-client-secret-do-not-leak"
 def _layer(tmp: Path, env_text: str, layer_id: str = "org", rank: int = 30) -> CliLayer:
     tmp.mkdir(parents=True, exist_ok=True)
     (tmp / ".env").write_text(env_text)
-    return CliLayer(
-        id=layer_id, role="org", rank=rank, repo="r", ref="main", auth="anon", root=tmp
-    )
+    return CliLayer(id=layer_id, role="org", rank=rank, repo="r", ref="main", auth="anon", root=tmp)
 
 
 def _fake_keychain(monkeypatch, values: dict[str, str]):
@@ -113,8 +111,12 @@ class TestReady:
 class TestNearestTierWins:
     def test_nearer_layer_without_store_falls_through_to_next(self, tmp_path, monkeypatch):
         _fake_keychain(monkeypatch, {})
-        nearer = _layer(tmp_path / "personal", "INFISICAL_BASE_URL=https://x\n", layer_id="personal", rank=10)
-        farther = _layer(tmp_path / "org", "INFISICAL_WORKSPACE_ID=ws-123\n", layer_id="org", rank=30)
+        nearer = _layer(
+            tmp_path / "personal", "INFISICAL_BASE_URL=https://x\n", layer_id="personal", rank=10
+        )
+        farther = _layer(
+            tmp_path / "org", "INFISICAL_WORKSPACE_ID=ws-123\n", layer_id="org", rank=30
+        )
 
         result = check_store_readiness([nearer, farther])
 
@@ -128,10 +130,15 @@ class TestNeverLeaksASecretValue:
         [
             {},
             {"INFISICAL_CLIENT_ID": _REAL_CLIENT_ID},
-            {"INFISICAL_CLIENT_ID": _REAL_CLIENT_ID, "INFISICAL_CLIENT_SECRET": _REAL_CLIENT_SECRET},
+            {
+                "INFISICAL_CLIENT_ID": _REAL_CLIENT_ID,
+                "INFISICAL_CLIENT_SECRET": _REAL_CLIENT_SECRET,
+            },
         ],
     )
-    def test_result_never_contains_the_credential_value(self, tmp_path, monkeypatch, keychain_values):
+    def test_result_never_contains_the_credential_value(
+        self, tmp_path, monkeypatch, keychain_values
+    ):
         _fake_keychain(monkeypatch, keychain_values)
         layer = _layer(tmp_path, "INFISICAL_WORKSPACE_ID=ws-123\n")
 

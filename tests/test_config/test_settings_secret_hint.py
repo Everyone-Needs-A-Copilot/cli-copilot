@@ -103,7 +103,11 @@ def test_nearest_layer_hint_wins_on_conflict(tmp_path, monkeypatch):
     nearest-wins semantics used everywhere else in the layered fold."""
     near = _layer(
         tmp_path / "near",
-        {"adopt": [{"service": "uspto", "requires_secret": [{"name": "SHARED", "from": "keychain"}]}]},
+        {
+            "adopt": [
+                {"service": "uspto", "requires_secret": [{"name": "SHARED", "from": "keychain"}]}
+            ]
+        },
         layer_id="org",
         rank=30,
     )
