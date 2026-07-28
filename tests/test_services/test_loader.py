@@ -96,9 +96,7 @@ class TestComposeAdopt:
 
     def test_adopt_unknown_service_raises(self, tmp_path):
         layer = _layer(tmp_path, "org-acme", rank=30)
-        (layer.root / "cli.overlay.yml").write_text(
-            "adopt:\n  - service: not-a-real-service\n"
-        )
+        (layer.root / "cli.overlay.yml").write_text("adopt:\n  - service: not-a-real-service\n")
         with pytest.raises(LayersManifestError, match="unknown base service"):
             _compose([layer])
 
@@ -147,7 +145,9 @@ class TestComposeProvides:
 class TestComposeOverride:
     def test_override_replaces_base_service_module_keeps_base_help(self, tmp_path):
         layer = _layer(tmp_path, "org-acme", rank=30)
-        _write_overlay_pkg(layer.root, "copilot_overlay_test_override", "services.db_coolify.commands")
+        _write_overlay_pkg(
+            layer.root, "copilot_overlay_test_override", "services.db_coolify.commands"
+        )
         (layer.root / "cli.overlay.yml").write_text(
             "override:\n"
             "  - service: db\n"
@@ -182,7 +182,9 @@ class TestPrecedenceNearestWins:
         (org_layer.root / "cli.overlay.yml").write_text(
             "override:\n  - service: db\n    module: copilot_overlay_org.services.db_org.commands\n"
         )
-        _write_overlay_pkg(personal_layer.root, "copilot_overlay_personal", "services.db_personal.commands")
+        _write_overlay_pkg(
+            personal_layer.root, "copilot_overlay_personal", "services.db_personal.commands"
+        )
         (personal_layer.root / "cli.overlay.yml").write_text(
             "override:\n"
             "  - service: db\n"

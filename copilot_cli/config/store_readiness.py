@@ -33,8 +33,7 @@ from copilot_cli.config.layers import CliLayer
 
 _READY = "store: ready"
 _CREDS_MISSING = (
-    "store: config present, bootstrap creds missing on this machine "
-    "(provision to authenticate)"
+    "store: config present, bootstrap creds missing on this machine (provision to authenticate)"
 )
 _NONE_DECLARED = "store: none declared"
 

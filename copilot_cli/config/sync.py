@@ -174,26 +174,42 @@ def sync_layer(layer: CliLayer, git: GitClient | None = None) -> LayerSyncResult
 
         if _is_dirty(status):
             return LayerSyncResult(
-                layer.id, "held", "local changes",
-                role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+                layer.id,
+                "held",
+                "local changes",
+                role=layer.role,
+                ref=layer.ref,
+                resolved_ref=resolved_ref,
             )
 
         if _has_unpushed_commits(status):
             return LayerSyncResult(
-                layer.id, "held", "local commits present",
-                role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+                layer.id,
+                "held",
+                "local commits present",
+                role=layer.role,
+                ref=layer.ref,
+                resolved_ref=resolved_ref,
             )
 
         try:
             git.pull(str(root), branch=resolved_ref)
         except Exception as exc:  # report, never crash
             return LayerSyncResult(
-                layer.id, "error", str(exc),
-                role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+                layer.id,
+                "error",
+                str(exc),
+                role=layer.role,
+                ref=layer.ref,
+                resolved_ref=resolved_ref,
             )
         return LayerSyncResult(
-            layer.id, "pulled", _ref_detail(layer, resolved_ref),
-            role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+            layer.id,
+            "pulled",
+            _ref_detail(layer, resolved_ref),
+            role=layer.role,
+            ref=layer.ref,
+            resolved_ref=resolved_ref,
         )
 
     # Mirror absent -- safe to clone (never-destroy has nothing to protect).
@@ -202,12 +218,20 @@ def sync_layer(layer: CliLayer, git: GitClient | None = None) -> LayerSyncResult
         git.clone(layer.repo, str(root), branch=resolved_ref)
     except Exception as exc:  # report, never crash
         return LayerSyncResult(
-            layer.id, "error", str(exc),
-            role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+            layer.id,
+            "error",
+            str(exc),
+            role=layer.role,
+            ref=layer.ref,
+            resolved_ref=resolved_ref,
         )
     return LayerSyncResult(
-        layer.id, "cloned", _ref_detail(layer, resolved_ref),
-        role=layer.role, ref=layer.ref, resolved_ref=resolved_ref,
+        layer.id,
+        "cloned",
+        _ref_detail(layer, resolved_ref),
+        role=layer.role,
+        ref=layer.ref,
+        resolved_ref=resolved_ref,
     )
 
 

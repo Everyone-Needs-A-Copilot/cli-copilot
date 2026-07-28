@@ -168,7 +168,7 @@ def _read_bootstrap_cred(name: str, env_values: dict[str, str]) -> str:
     string if neither has it."""
     # Local import: keychain lookup lives in the ladder; avoids an import cycle
     # at module load (secrets_ladder imports nothing from here at import time).
-    from copilot_cli.config.secrets_ladder import _SecretRungUnavailable, _rung_keychain
+    from copilot_cli.config.secrets_ladder import _rung_keychain, _SecretRungUnavailable
 
     try:
         value = _rung_keychain(name, [])
@@ -229,14 +229,22 @@ def _find_store_layer(chain: list[CliLayer]):
     return None
 
 
-async def _fetch_all(base_url: str, client_id: str, client_secret: str,
-                     workspace: str, environment: str, secret_path: str) -> dict[str, str]:
+async def _fetch_all(
+    base_url: str,
+    client_id: str,
+    client_secret: str,
+    workspace: str,
+    environment: str,
+    secret_path: str,
+) -> dict[str, str]:
     """Authenticate and bulk-read every secret at the tier's path into a
     ``{name: value}`` dict. Raises `StoreUnavailable` on any failure."""
     from copilot_cli.services.infisical.core.api_client import InfisicalClient
     from copilot_cli.services.infisical.core.exceptions import (
         APIError,
         AuthenticationError,
+    )
+    from copilot_cli.services.infisical.core.exceptions import (
         ConnectionError as InfisicalConnectionError,
     )
 
@@ -322,6 +330,6 @@ def resolve_from_store(name: str, chain: list[CliLayer]) -> str:
             raise StoreUnavailable(f"store fetch could not run: {exc}") from exc
         _SECRET_CACHE[cache_key] = secrets
 
-    if name in secrets and secrets[name]:
+    if secrets.get(name):
         return secrets[name]
     raise StoreUnavailable(f"{name} not present in the tier's managed store")

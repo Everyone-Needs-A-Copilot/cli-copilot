@@ -73,9 +73,7 @@ def _no_real_keychain(monkeypatch):
     def _always_miss(name: str, chain: object) -> str:
         raise _SecretRungUnavailable(f"no fake keychain entry for {name}")
 
-    monkeypatch.setattr(
-        "copilot_cli.config.secrets_ladder._rung_keychain", _always_miss
-    )
+    monkeypatch.setattr("copilot_cli.config.secrets_ladder._rung_keychain", _always_miss)
 
 
 def _write_org_overlay(org_root: Path, base_url: str) -> None:

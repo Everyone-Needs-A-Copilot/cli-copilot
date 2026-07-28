@@ -396,8 +396,7 @@ def update() -> None:
 
     if not chain:
         console.print(
-            "[dim]No copilot.layers.yml resolved a 'cli' component chain -- "
-            "nothing to sync.[/dim]"
+            "[dim]No copilot.layers.yml resolved a 'cli' component chain -- nothing to sync.[/dim]"
         )
         return
 

@@ -475,7 +475,9 @@ class TestSettingsSourcePrecedence:
                         {
                             "service": "coolify",
                             "module": "copilot_overlay_internal.services.coolify.commands",
-                            "config": {"uspto_cli_base_url": "https://from-provides-overlay.example"},
+                            "config": {
+                                "uspto_cli_base_url": "https://from-provides-overlay.example"
+                            },
                         }
                     ],
                 }
@@ -527,7 +529,9 @@ class TestSettingsSourcePrecedence:
                         {
                             "service": "coolify",
                             "module": "copilot_overlay_internal.services.coolify.commands",
-                            "config": {"uspto_cli_base_url": "https://from-org-provides-overlay.example"},
+                            "config": {
+                                "uspto_cli_base_url": "https://from-org-provides-overlay.example"
+                            },
                         }
                     ],
                 }
@@ -609,7 +613,10 @@ class TestSettingsSourcePrecedence:
                 {
                     "version": 1,
                     "adopt": [
-                        {"service": "uspto", "config": {"shared_field": "from-adopt", "adopt_only": "a"}}
+                        {
+                            "service": "uspto",
+                            "config": {"shared_field": "from-adopt", "adopt_only": "a"},
+                        }
                     ],
                     "provides": [
                         {

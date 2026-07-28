@@ -102,7 +102,9 @@ _BASE_SERVICES: tuple[ServiceEntry, ...] = (
         "Skill runtime — discover, execute, verify skills",
         package="copilot_cli.services.skill",
     ),
-    ServiceEntry("uspto", "USPTO patent and trademark data access", package="copilot_cli.services.uspto"),
+    ServiceEntry(
+        "uspto", "USPTO patent and trademark data access", package="copilot_cli.services.uspto"
+    ),
 )
 
 
