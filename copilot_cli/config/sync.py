@@ -1,6 +1,6 @@
 """Mirror-sync logic for `copilot update` (V-3/V-4 onboarding blocker).
 
-Per resolved `component: cli` layer (`config.layers.resolve_cli_layer_chain`),
+Per resolved `product: cli` layer (`config.layers.resolve_cli_layer_chain`),
 clone-or-pull that layer's local read-only mirror (`layer.root`, conventionally
 ``~/.copilot/mirrors/cli/<id>``) from its declared `source.repo`/`source.ref`.
 

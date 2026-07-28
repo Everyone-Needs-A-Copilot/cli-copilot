@@ -270,7 +270,7 @@ def _build_layers_payload() -> dict:
 def layers() -> None:
     """Show the resolved CLI tier chain and per-service provenance.
 
-    With no `copilot.layers.yml` resolving a `component: cli` chain, this
+    With no `copilot.layers.yml` resolving a `product: cli` chain, this
     reports an empty chain and the base 12 services, each `tier:
     foundation, mode: base` -- the inert Phase-1 state. Control Tower calls
     this with `--json` and renders it (invariant #1: parse, never compute).
@@ -290,7 +290,7 @@ def layers() -> None:
     else:
         console.print("[bold]CLI tier chain[/bold]\n")
         console.print(
-            "[dim]No copilot.layers.yml resolved a 'cli' component chain -- "
+            "[dim]No copilot.layers.yml resolved a 'cli' product chain -- "
             "running the base foundation only.[/dim]"
         )
     console.print()
@@ -396,7 +396,7 @@ def update() -> None:
 
     if not chain:
         console.print(
-            "[dim]No copilot.layers.yml resolved a 'cli' component chain -- nothing to sync.[/dim]"
+            "[dim]No copilot.layers.yml resolved a 'cli' product chain -- nothing to sync.[/dim]"
         )
         return
 

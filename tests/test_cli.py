@@ -39,7 +39,7 @@ def _write_cli_manifest(path: Path, repo_url: str, ref: str = "main") -> None:
                     {
                         "id": "foundation",
                         "role": "foundation",
-                        "component": "cli",
+                        "product": "cli",
                         "rank": 40,
                         "source": {"repo": repo_url, "ref": ref},
                         "auth": "anon",

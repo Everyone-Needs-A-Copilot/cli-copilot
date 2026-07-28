@@ -7,7 +7,7 @@ adopt-vs-override mechanism" (Option C: a manifest-driven loader, not PEP
 `resolve_cli_services()` is the single source of truth for "what services
 does this invocation of `copilot` register": `main.py` iterates it to build
 the Typer app, and `copilot layers --json` reports it verbatim for
-provenance. With no `copilot.layers.yml` resolving a `cli`-component chain
+provenance. With no `copilot.layers.yml` resolving a `cli` product chain
 (`config.layers.resolve_cli_layer_chain()` returns `None`), it returns
 exactly `_BASE_SERVICES` -- the same 12 services, same names, same order,
 same help text `main.py` used to hardcode. This is the fast-path contract
