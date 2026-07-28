@@ -62,7 +62,7 @@ class SecretRefSource(PydanticBaseSettingsSource):
     ladder (`secrets_ladder.resolve_secret`) -- the single place a secret
     *value* enters `Settings` in the layered path. Only engaged when
     `settings_customise_sources` builds the layered source tuple (i.e. a
-    `copilot.layers.yml` with `component: cli` entries resolves); the
+    `copilot.layers.yml` with `product: cli` entries resolves); the
     manifest-absent fast path never constructs this class.
 
     A field only resolves through this source if some tier's
@@ -209,7 +209,7 @@ class Settings(BaseSettings):
         """Layer the CLI tier chain into settings resolution -- gated
         entirely behind `resolve_cli_layer_chain()` (design doc §1.2, D5).
 
-        No manifest resolves (or none of its entries are `component: cli`)
+        No manifest resolves (or none of its entries are `product: cli`)
         -> returns the IDENTICAL source tuple as pre-Phase-1, so
         `_find_env_file()` (baked into `model_config.env_file` above) is
         reached completely unchanged and `COPILOT_ENV_FILE` keeps working

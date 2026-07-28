@@ -44,6 +44,7 @@ adopt-vs-provides collision rule (provides wins -- see
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 import yaml
@@ -87,7 +88,7 @@ class _FakeClient:
     """Async stand-in for `InfisicalClient` -- same shape as
     `test_managed_store.py`'s fake. Counts `list_secrets` calls."""
 
-    secrets: list[dict] = []
+    secrets: ClassVar[list[dict]] = []
     calls: int = 0
 
     def __init__(self, base_url, client_id, client_secret, timeout=30.0):
@@ -167,7 +168,7 @@ class TestConfigInheritsFromCommittedOverlay:
                 {
                     "id": "org",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
                     "auth": "ssh-work",
@@ -215,7 +216,7 @@ class TestNearestWinsAcrossConfigFold:
                 {
                     "id": "dept",
                     "role": "department",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 20,
                     "source": {"repo": "git@github-work:acme/cli-copilot-dept.git"},
                     "auth": "ssh-work",
@@ -223,7 +224,7 @@ class TestNearestWinsAcrossConfigFold:
                 {
                     "id": "org",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
                     "auth": "ssh-work",
@@ -273,7 +274,7 @@ class TestProvidesConfigInheritsFromCommittedOverlay:
                 {
                     "id": "org",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
                     "auth": "ssh-work",
@@ -361,7 +362,7 @@ class TestSettingsSourcePrecedence:
                 {
                     "id": "org",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
                     "auth": "ssh-work",
@@ -404,7 +405,7 @@ class TestSettingsSourcePrecedence:
                 {
                     "id": "dept",
                     "role": "department",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 20,
                     "source": {"repo": "git@github-work:acme/cli-copilot-dept.git"},
                     "auth": "ssh-work",
@@ -412,7 +413,7 @@ class TestSettingsSourcePrecedence:
                 {
                     "id": "org",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
                     "auth": "ssh-work",
@@ -459,7 +460,7 @@ class TestSettingsSourcePrecedence:
                 {
                     "id": "org",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
                     "auth": "ssh-work",
@@ -502,7 +503,7 @@ class TestSettingsSourcePrecedence:
                 {
                     "id": "dept",
                     "role": "department",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 20,
                     "source": {"repo": "git@github-work:acme/cli-copilot-dept.git"},
                     "auth": "ssh-work",
@@ -510,7 +511,7 @@ class TestSettingsSourcePrecedence:
                 {
                     "id": "org",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
                     "auth": "ssh-work",
@@ -566,7 +567,7 @@ class TestSettingsSourcePrecedence:
                 {
                     "id": "org",
                     "role": "org",
-                    "component": "cli",
+                    "product": "cli",
                     "rank": 30,
                     "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
                     "auth": "ssh-work",

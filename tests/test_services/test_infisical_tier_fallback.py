@@ -35,7 +35,7 @@ from copilot_cli.config.secrets_ladder import _SecretRungUnavailable
 _ORG_LAYER = {
     "id": "org",
     "role": "org",
-    "component": "cli",
+    "product": "cli",
     "rank": 30,
     "source": {"repo": "git@github-work:acme/cli-copilot-internal.git"},
     "auth": "ssh-work",

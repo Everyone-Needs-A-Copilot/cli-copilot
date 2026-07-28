@@ -14,7 +14,12 @@ import textwrap
 import pytest
 
 from copilot_cli.config.layers import CliLayer, LayersManifestError
-from copilot_cli.services._loader import _BASE_SERVICES, _compose, load_service
+from copilot_cli.services._loader import (
+    _BASE_SERVICES,
+    _compose,
+    load_service,
+    resolve_cli_services,
+)
 
 
 def _layer(tmp_path, layer_id: str, rank: int, subdir: str | None = None) -> CliLayer:
@@ -129,6 +134,52 @@ class TestComposeProvides:
 
         # Base 12 are untouched and still present.
         assert len(resolved) == len(_BASE_SERVICES) + 1
+
+    def test_product_manifest_reaches_org_overlay_service(self, tmp_path, monkeypatch):
+        """Exercise the exact aggregate field emitted by ``cc onboard``.
+
+        A product-only CLI entry must reach service composition rather than
+        silently falling back to the public foundation command set.
+        """
+        home = tmp_path / "home"
+        home.mkdir()
+        mirrors_base = tmp_path / "copilot-state"
+        org_root = mirrors_base / "mirrors" / "cli" / "org-internal"
+        org_root.mkdir(parents=True)
+        _write_overlay_pkg(
+            org_root,
+            "copilot_overlay_contract",
+            "services.discord.commands",
+        )
+        (org_root / "cli.overlay.yml").write_text(
+            "provides:\n"
+            "  - service: discord\n"
+            "    module: copilot_overlay_contract.services.discord.commands\n"
+            "    help: Discord handoff threads\n"
+        )
+        manifest = tmp_path / "copilot.layers.yml"
+        manifest.write_text(
+            "version: 1\n"
+            "layers:\n"
+            "  - id: org-internal\n"
+            "    role: org\n"
+            "    product: cli\n"
+            "    rank: 30\n"
+            "    source:\n"
+            "      repo: git@github-work:example/cli-copilot-internal.git\n"
+            "      ref: main\n"
+            "    auth: ssh-work\n"
+        )
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("COPILOT_LAYERS_FILE", str(manifest))
+        monkeypatch.setenv("COPILOT_MIRRORS_ROOT", str(mirrors_base))
+
+        resolved = resolve_cli_services()
+        discord = next(service for service in resolved if service.name == "discord")
+
+        assert discord.tier == "org-internal"
+        assert discord.mode == "provides"
+        assert discord.app is not None
 
     def test_provides_colliding_with_existing_name_without_override_is_refused(self, tmp_path):
         layer = _layer(tmp_path, "org-acme", rank=30)
