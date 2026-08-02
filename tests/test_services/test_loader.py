@@ -105,6 +105,30 @@ class TestComposeAdopt:
         with pytest.raises(LayersManifestError, match="unknown base service"):
             _compose([layer])
 
+    def test_adopt_carries_requires_secret_and_store_scope_onto_resolved_entry(self, tmp_path):
+        layer = _layer(tmp_path, "org-acme", rank=30)
+        (layer.root / "cli.overlay.yml").write_text(
+            "adopt:\n"
+            "  - service: uspto\n"
+            "    requires_secret:\n"
+            "      - name: USPTO_CLI_API_KEY\n"
+            "        from: keychain\n"
+            "    store_scope: org/shared\n"
+        )
+
+        resolved = _compose([layer])
+        uspto = next(svc for svc in resolved if svc.name == "uspto")
+
+        assert uspto.requires_secret == ("USPTO_CLI_API_KEY",)
+        assert uspto.requires_secret_hints == {"USPTO_CLI_API_KEY": "keychain"}
+        assert uspto.store_scope == "org/shared"
+
+        # No overlay entry for these -> untouched foundation defaults.
+        git = next(svc for svc in resolved if svc.name == "git")
+        assert git.requires_secret == ()
+        assert git.requires_secret_hints == {}
+        assert git.store_scope is None
+
 
 class TestComposeProvides:
     def test_provides_adds_a_new_service_from_overlay_package(self, tmp_path):
@@ -134,6 +158,27 @@ class TestComposeProvides:
 
         # Base 12 are untouched and still present.
         assert len(resolved) == len(_BASE_SERVICES) + 1
+
+    def test_provides_carries_requires_secret_and_store_scope_onto_resolved_entry(self, tmp_path):
+        layer = _layer(tmp_path, "org-acme", rank=30)
+        _write_overlay_pkg(layer.root, "copilot_overlay_test_secret", "services.coolify.commands")
+        (layer.root / "cli.overlay.yml").write_text(
+            "provides:\n"
+            "  - service: coolify\n"
+            "    module: copilot_overlay_test_secret.services.coolify.commands\n"
+            "    help: Coolify infrastructure management\n"
+            "    requires_secret:\n"
+            "      - name: COOLIFY_API_KEY\n"
+            "        from: store\n"
+        )
+
+        resolved = _compose([layer])
+        coolify = next(svc for svc in resolved if svc.name == "coolify")
+
+        assert coolify.requires_secret == ("COOLIFY_API_KEY",)
+        assert coolify.requires_secret_hints == {"COOLIFY_API_KEY": "store"}
+        # No `store_scope:` declared on this entry -> None, the common case.
+        assert coolify.store_scope is None
 
     def test_product_manifest_reaches_org_overlay_service(self, tmp_path, monkeypatch):
         """Exercise the exact aggregate field emitted by ``cc onboard``.
@@ -214,6 +259,26 @@ class TestComposeOverride:
         assert db.package == "copilot_overlay_test_override.services.db_coolify"
         base_db = next(s for s in _BASE_SERVICES if s.name == "db")
         assert db.help == base_db.help  # help text preserved from base
+
+    def test_override_carries_requires_secret_and_store_scope_onto_resolved_entry(self, tmp_path):
+        layer = _layer(tmp_path, "org-acme", rank=30)
+        _write_overlay_pkg(
+            layer.root, "copilot_overlay_test_override_secret", "services.db_coolify.commands"
+        )
+        (layer.root / "cli.overlay.yml").write_text(
+            "override:\n"
+            "  - service: db\n"
+            "    module: copilot_overlay_test_override_secret.services.db_coolify.commands\n"
+            "    requires_secret:\n"
+            "      - DATABASE_URL\n"
+            "    store_scope: dept/sales\n"
+        )
+
+        resolved = _compose([layer])
+        db = next(svc for svc in resolved if svc.name == "db")
+
+        assert db.requires_secret == ("DATABASE_URL",)
+        assert db.store_scope == "dept/sales"
 
     def test_override_unknown_service_raises(self, tmp_path):
         layer = _layer(tmp_path, "org-acme", rank=30)

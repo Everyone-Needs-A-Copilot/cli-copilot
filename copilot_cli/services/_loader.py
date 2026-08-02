@@ -24,7 +24,7 @@ from __future__ import annotations
 import dataclasses
 import importlib
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from copilot_cli.config.layers import (
@@ -56,6 +56,9 @@ class ServiceEntry:
     commands_attr: str = "app"
     tier: str = "foundation"
     mode: str = "base"  # base | adopt | override | provides
+    requires_secret: tuple[str, ...] = ()
+    requires_secret_hints: dict[str, str] = field(default_factory=dict)
+    store_scope: str | None = None
 
     @property
     def app(self):
@@ -145,7 +148,14 @@ def _compose(chain: list[CliLayer]) -> tuple[ServiceEntry, ...]:
                 raise LayersManifestError(
                     f"{layer.id}: adopt references unknown base service {adopted.service!r}"
                 )
-            services[adopted.service] = dataclasses.replace(base, tier=layer.id, mode="adopt")
+            services[adopted.service] = dataclasses.replace(
+                base,
+                tier=layer.id,
+                mode="adopt",
+                requires_secret=adopted.requires_secret,
+                requires_secret_hints=adopted.requires_secret_hints,
+                store_scope=adopted.store_scope,
+            )
 
         override_names = {o.service for o in overlay.override}
         for added in overlay.provides:
@@ -163,6 +173,9 @@ def _compose(chain: list[CliLayer]) -> tuple[ServiceEntry, ...]:
                 commands_module=module,
                 tier=layer.id,
                 mode="provides",
+                requires_secret=added.requires_secret,
+                requires_secret_hints=added.requires_secret_hints,
+                store_scope=added.store_scope,
             )
 
         for overridden in overlay.override:
@@ -178,6 +191,9 @@ def _compose(chain: list[CliLayer]) -> tuple[ServiceEntry, ...]:
                 commands_module=module,
                 tier=layer.id,
                 mode="override",
+                requires_secret=overridden.requires_secret,
+                requires_secret_hints=overridden.requires_secret_hints,
+                store_scope=overridden.store_scope,
             )
 
     # Preserve base registration order; append any newly-provided services

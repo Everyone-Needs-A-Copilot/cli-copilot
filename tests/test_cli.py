@@ -158,6 +158,114 @@ def test_layers_json_reports_base_services_with_no_manifest(tmp_path, monkeypatc
         "skill",
         "uspto",
     }
+    # Additive fields (id/requires_secret/store_scope): every base/foundation
+    # service declares no overlay entry at all, so these are the "nothing
+    # declared" defaults -- id mirrors name (already slug-shaped), an empty
+    # requires_secret list, a null store_scope.
+    for svc in payload["services"]:
+        assert svc["id"] == svc["name"]
+        assert svc["requires_secret"] == []
+        assert svc["store_scope"] is None
+
+
+def test_layers_json_reports_requires_secret_and_store_scope_from_org_overlay(
+    tmp_path, monkeypatch
+):
+    """`copilot --json layers` with an org overlay declaring `requires_secret`
+    (bare + `{name, from}` mapping forms) and `store_scope` surfaces both,
+    additively, on the matching `services[]` row -- WP-388 §7 option 1: the
+    coolify row is quoted verbatim in the WP as the proof shape."""
+    home = tmp_path / "home"
+    home.mkdir()
+    mirrors_base = tmp_path / "copilot-state"
+    org_root = mirrors_base / "mirrors" / "cli" / "org-internal"
+    org_root.mkdir(parents=True)
+    (org_root / "cli.overlay.yml").write_text(
+        yaml.safe_dump(
+            {
+                "adopt": [
+                    {
+                        "service": "uspto",
+                        "requires_secret": ["USPTO_CLI_API_KEY"],
+                        "store_scope": "org/shared",
+                    }
+                ],
+                "provides": [
+                    {
+                        "service": "coolify",
+                        "module": "copilot_overlay_internal.services.coolify.main",
+                        "help": "Coolify infrastructure management",
+                        "requires_secret": [{"name": "COOLIFY_API_KEY", "from": "store"}],
+                    }
+                ],
+            }
+        )
+    )
+    manifest = tmp_path / "copilot.layers.yml"
+    manifest.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "layers": [
+                    {
+                        "id": "org-internal",
+                        "role": "org",
+                        "product": "cli",
+                        "rank": 30,
+                        "source": {
+                            "repo": "git@github-work:example/cli-copilot-internal.git",
+                            "ref": "main",
+                        },
+                        "auth": "ssh-work",
+                    }
+                ],
+            }
+        )
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("COPILOT_LAYERS_FILE", str(manifest))
+    monkeypatch.setenv("COPILOT_MIRRORS_ROOT", str(mirrors_base))
+
+    try:
+        result = runner.invoke(app, ["--json", "layers"])
+    finally:
+        set_json_mode(False)
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output.strip())
+    services_by_name = {svc["name"]: svc for svc in payload["services"]}
+
+    coolify = services_by_name["coolify"]
+    assert coolify == {
+        "name": "coolify",
+        "help": "Coolify infrastructure management",
+        "tier": "org-internal",
+        "mode": "provides",
+        "id": "coolify",
+        "requires_secret": [{"name": "COOLIFY_API_KEY", "from": "store"}],
+        "store_scope": None,
+    }
+
+    uspto = services_by_name["uspto"]
+    assert uspto["requires_secret"] == [{"name": "USPTO_CLI_API_KEY", "from": "any"}]
+    assert uspto["store_scope"] == "org/shared"
+
+    # A service with no overlay entry at all keeps the "nothing declared"
+    # defaults -- proves the fields are additive, not a blanket backfill.
+    git = services_by_name["git"]
+    assert git["requires_secret"] == []
+    assert git["store_scope"] is None
+
+    # Lightweight shape check against docs/schemas/layers.schema.json's
+    # `$defs.service`/`$defs.requiredSecret` (no jsonschema dependency in
+    # this suite yet -- see pyproject.toml `[dev]` extras).
+    for svc in payload["services"]:
+        assert isinstance(svc["id"], str) and svc["id"]
+        assert isinstance(svc["requires_secret"], list)
+        for entry in svc["requires_secret"]:
+            assert set(entry.keys()) == {"name", "from"}
+            assert entry["from"] in {"any", "store", "keychain"}
+        assert svc["store_scope"] is None or isinstance(svc["store_scope"], str)
 
 
 def test_layers_human_output_with_no_manifest(tmp_path, monkeypatch):

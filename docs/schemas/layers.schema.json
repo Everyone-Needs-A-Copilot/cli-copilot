@@ -74,6 +74,33 @@
           "type": "string",
           "enum": ["base", "adopt", "override", "provides"],
           "description": "'base': foundation's own service, untouched. 'adopt': a tier turned this base service on with its own config/secrets only (zero code). 'override': a tier replaced this service's command with its own implementation. 'provides': a tier added a service that does not exist in the base 12 at all."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "OPTIONAL, additive. Stable slug of `name` (lowercase, non-alphanumeric runs collapsed to a single hyphen). Equal to `name` for every service today; exists so a future display-style `name` need not also be a valid identifier."
+        },
+        "requires_secret": {
+          "type": "array",
+          "description": "OPTIONAL, additive. Every credential NAME this service's declaring tier (`adopt`/`provides`/`override` in that tier's `cli.overlay.yml`) declared under `requires_secret`, in declaration order. Names only, never values. Empty array when the service declares none (including every base/foundation service).",
+          "items": { "$ref": "#/$defs/requiredSecret" }
+        },
+        "store_scope": {
+          "type": ["string", "null"],
+          "description": "OPTIONAL, additive. This service's declared `store_scope` (maps to the org's `ecosystem.yml` `team_scopes`), or null when the declaring tier's overlay entry does not set one -- the common case today."
+        }
+      }
+    },
+    "requiredSecret": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "from"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "description": "The credential name resolved via the credential ladder. Never a value." },
+        "from": {
+          "type": "string",
+          "enum": ["any", "store", "keychain"],
+          "description": "Routing hint restricting which credential-ladder rungs are tried for this name. 'any' is the default when the overlay declares a bare string name (tries every rung)."
         }
       }
     }

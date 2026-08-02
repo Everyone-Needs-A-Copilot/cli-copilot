@@ -466,6 +466,70 @@ class TestRequiresSecretRoutingHint:
         with pytest.raises(LayersManifestError, match="must be a string or a"):
             load_tier_overlay(overlay_path)
 
+
+class TestStoreScope:
+    """Item (services[] projection): the optional per-entry `store_scope`
+    field -- maps to the org's `ecosystem.yml` `team_scopes` (per
+    `admin-standup-contract.md` §5). Purely additive: absent -> `None`,
+    identical to `requires_secret`'s own back-compat default."""
+
+    def test_absent_store_scope_defaults_to_none(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump({"adopt": [{"service": "uspto", "requires_secret": ["X"]}]})
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.adopt[0].store_scope is None
+
+    def test_declared_store_scope_parses_on_adopt(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {
+                    "adopt": [
+                        {"service": "uspto", "requires_secret": ["X"], "store_scope": "org/shared"}
+                    ]
+                }
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.adopt[0].store_scope == "org/shared"
+
+    def test_declared_store_scope_parses_on_provides(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {
+                    "provides": [
+                        {
+                            "service": "coolify",
+                            "module": "pkg.mod",
+                            "requires_secret": [{"name": "COOLIFY_API_KEY", "from": "store"}],
+                            "store_scope": "org/shared",
+                        }
+                    ]
+                }
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.provides[0].store_scope == "org/shared"
+
+    def test_declared_store_scope_parses_on_override(self, tmp_path):
+        overlay_path = tmp_path / "cli.overlay.yml"
+        overlay_path.write_text(
+            yaml.safe_dump(
+                {
+                    "override": [
+                        {"service": "db", "module": "pkg.mod", "store_scope": "dept/sales"},
+                    ]
+                }
+            )
+        )
+        overlay = load_tier_overlay(overlay_path)
+        assert overlay.override[0].store_scope == "dept/sales"
+
+
+class TestRequiresSecretHintsAggregate:
     def test_hints_merge_across_adopt_provides_override_nearest_first_wins(self, tmp_path):
         """`all_requires_secret_hints()` merges all three sections; a
         duplicate name's FIRST declaration wins, mirroring

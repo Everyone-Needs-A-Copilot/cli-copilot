@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 import typer
@@ -225,6 +226,15 @@ def health() -> None:
 LAYERS_SCHEMA_VERSION = 1
 
 
+def _slugify(name: str) -> str:
+    """Stable slug for a service `name` -- lowercase, non-alphanumeric runs
+    collapsed to a single hyphen, no leading/trailing hyphen. Every current
+    service name is already slug-shaped, so `id == name` today; this exists
+    so a future display-style `name` doesn't have to be a valid `id` too
+    (mirrors the `id` field in the §5 integration registry schema)."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
 def _build_layers_payload() -> dict:
     """Build the `copilot layers` payload -- parse-not-compute friendly for
     Control Tower (invariant #1): every field here is already resolved by
@@ -260,7 +270,18 @@ def _build_layers_payload() -> dict:
             for layer in (chain or [])
         ],
         "services": [
-            {"name": svc.name, "help": svc.help, "tier": svc.tier, "mode": svc.mode}
+            {
+                "name": svc.name,
+                "help": svc.help,
+                "tier": svc.tier,
+                "mode": svc.mode,
+                "id": _slugify(svc.name),
+                "requires_secret": [
+                    {"name": secret_name, "from": svc.requires_secret_hints.get(secret_name, "any")}
+                    for secret_name in svc.requires_secret
+                ],
+                "store_scope": svc.store_scope,
+            }
             for svc in services
         ],
     }

@@ -330,6 +330,7 @@ class OverlayAdopt:
     config: dict[str, str] = field(default_factory=dict)
     requires_secret: tuple[str, ...] = ()
     requires_secret_hints: dict[str, str] = field(default_factory=dict)
+    store_scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -343,6 +344,7 @@ class OverlayProvide:
     config: dict[str, str] = field(default_factory=dict)
     requires_secret: tuple[str, ...] = ()
     requires_secret_hints: dict[str, str] = field(default_factory=dict)
+    store_scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -355,6 +357,7 @@ class OverlayOverride:
     module: str
     requires_secret: tuple[str, ...] = ()
     requires_secret_hints: dict[str, str] = field(default_factory=dict)
+    store_scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -483,12 +486,14 @@ def load_tier_overlay(overlay_path: Path) -> TierOverlay:
         adopt_list = []
         for e in raw.get("adopt") or []:
             names, hints = _parse_requires_secret(e.get("requires_secret"))
+            store_scope = e.get("store_scope")
             adopt_list.append(
                 OverlayAdopt(
                     service=str(e["service"]),
                     config={str(k): str(v) for k, v in (e.get("config") or {}).items()},
                     requires_secret=names,
                     requires_secret_hints=hints,
+                    store_scope=str(store_scope) if store_scope is not None else None,
                 )
             )
         adopt = tuple(adopt_list)
@@ -496,6 +501,7 @@ def load_tier_overlay(overlay_path: Path) -> TierOverlay:
         provides_list = []
         for e in raw.get("provides") or []:
             names, hints = _parse_requires_secret(e.get("requires_secret"))
+            store_scope = e.get("store_scope")
             provides_list.append(
                 OverlayProvide(
                     service=str(e["service"]),
@@ -504,6 +510,7 @@ def load_tier_overlay(overlay_path: Path) -> TierOverlay:
                     config={str(k): str(v) for k, v in (e.get("config") or {}).items()},
                     requires_secret=names,
                     requires_secret_hints=hints,
+                    store_scope=str(store_scope) if store_scope is not None else None,
                 )
             )
         provides = tuple(provides_list)
@@ -511,12 +518,14 @@ def load_tier_overlay(overlay_path: Path) -> TierOverlay:
         override_list = []
         for e in raw.get("override") or []:
             names, hints = _parse_requires_secret(e.get("requires_secret"))
+            store_scope = e.get("store_scope")
             override_list.append(
                 OverlayOverride(
                     service=str(e["service"]),
                     module=str(e["module"]),
                     requires_secret=names,
                     requires_secret_hints=hints,
+                    store_scope=str(store_scope) if store_scope is not None else None,
                 )
             )
         override = tuple(override_list)
