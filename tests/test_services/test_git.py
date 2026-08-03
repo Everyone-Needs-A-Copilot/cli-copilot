@@ -23,14 +23,26 @@ def runner():
 
 @pytest.fixture
 def git_client(mock_settings):
-    """Return a GitClient with deterministic settings.
+    """Return a GitClient with deterministic commit-author settings.
 
     The autouse ``mock_settings`` fixture patches the module-level
     ``get_settings`` on ``copilot_cli.config.settings``, but GitClient
-    imports it by name so we must also patch the local reference.
+    imports it by name so we must also patch the local reference for the
+    lifetime of each test. Construction itself deliberately does not read
+    settings; only an implicit-author commit does.
     """
     with patch("copilot_cli.services.git.client.get_settings", return_value=mock_settings):
-        return GitClient()
+        yield GitClient()
+
+
+def test_constructor_does_not_load_global_settings():
+    """Read-only Git callers may construct a client without resolving any
+    unrelated service credentials from the layered Settings object."""
+    with patch(
+        "copilot_cli.services.git.client.get_settings",
+        side_effect=AssertionError("settings must stay lazy"),
+    ):
+        GitClient()
 
 
 @pytest.fixture
@@ -388,18 +400,22 @@ class TestGitClientCommit:
 
     @patch.object(GitClient, "_open_repo")
     def test_commit_with_explicit_author(self, mock_open, git_client):
-        """commit() parses 'Name <email>' author string."""
+        """commit() parses an explicit author without loading settings."""
         repo = MagicMock()
         commit_obj = MagicMock()
         commit_obj.hexsha = "deadbeef"
         repo.index.commit.return_value = commit_obj
         mock_open.return_value = repo
 
-        result = git_client.commit(
-            path="/repo",
-            message="feat: new thing",
-            author="Alice <alice@example.com>",
-        )
+        with patch(
+            "copilot_cli.services.git.client.get_settings",
+            side_effect=AssertionError("explicit author must not load settings"),
+        ):
+            result = git_client.commit(
+                path="/repo",
+                message="feat: new thing",
+                author="Alice <alice@example.com>",
+            )
 
         call_kwargs = repo.index.commit.call_args
         actor = call_kwargs[1]["author"]

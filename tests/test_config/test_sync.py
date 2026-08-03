@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 from copilot_cli.config.layers import CliLayer
 from copilot_cli.config.sync import is_semver_range, sync_all, sync_layer
@@ -349,6 +350,21 @@ class TestRangeResolution:
 
 
 class TestSyncAll:
+    def test_constructed_client_does_not_resolve_unrelated_service_settings(self, tmp_path):
+        """Regression for Control Tower TASK-223: ``copilot update`` creates
+        its own GitClient, and mirror sync must not construct global Settings
+        (which would eagerly resolve every declared service secret)."""
+        remote = _init_remote(tmp_path)
+        layer = _make_layer(tmp_path, _remote_url(remote))
+
+        with patch(
+            "copilot_cli.services.git.client.get_settings",
+            side_effect=AssertionError("mirror sync must not resolve service settings"),
+        ):
+            results = sync_all(chain=[layer])
+
+        assert [result.action for result in results] == ["cloned"]
+
     def test_syncs_every_layer_in_the_chain(self, tmp_path):
         remote_a = _init_remote(tmp_path, name="remote-a")
         remote_b = _init_remote(tmp_path, name="remote-b")

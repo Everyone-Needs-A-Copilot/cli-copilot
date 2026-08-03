@@ -14,11 +14,6 @@ from copilot_cli.shared.errors import CopilotError, NotFoundError
 class GitClient:
     """Thin wrapper around GitPython for common repository operations."""
 
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._user_name: str = settings.git_user_name
-        self._user_email: str = settings.git_user_email
-
     # ------------------------------------------------------------------
     # Public helpers
     # ------------------------------------------------------------------
@@ -291,7 +286,13 @@ class GitClient:
                 email = email.rstrip(">").strip()
                 actor = Actor(name, email)
             else:
-                actor = Actor(self._user_name, self._user_email)
+                # Clone/pull/status/list-tags are configuration-mirror
+                # operations and must not resolve every service credential
+                # merely because they share this client. Only a commit needs
+                # the configured fallback identity, so load Settings at the
+                # point of use rather than in GitClient construction.
+                settings = get_settings()
+                actor = Actor(settings.git_user_name, settings.git_user_email)
 
             commit_obj = repo.index.commit(message, author=actor)
             return {
