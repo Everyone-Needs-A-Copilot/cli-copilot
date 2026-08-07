@@ -242,6 +242,62 @@ class TestPull:
         assert second.action == "pulled"
         assert (layer.root / "SECOND.md").read_text() == "second commit\n"
 
+    def test_replaces_parentless_foundation_snapshot_without_merging(self, tmp_path):
+        """A newer Foundation tag can be intentionally unrelated to the old
+        tag. A clean read-only mirror advances by detached checkout, never by
+        attempting to merge the two parentless snapshot histories."""
+        remote = _init_remote(tmp_path)
+
+        def snapshot(tag: str, content: str) -> str:
+            (remote / "README.md").write_text(content, encoding="utf-8")
+            _run_git("add", "README.md", cwd=remote)
+            tree = subprocess.run(
+                ["git", "write-tree"],
+                cwd=remote,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            commit = subprocess.run(
+                ["git", "commit-tree", tree, "-m", f"snapshot {tag}"],
+                cwd=remote,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            _run_git("tag", "-a", tag, commit, "-m", tag, cwd=remote)
+            return commit
+
+        first_commit = snapshot("v1.4.5", "first snapshot\n")
+        second_commit = snapshot("v1.5.0", "second snapshot\n")
+        first = _make_layer(tmp_path, _remote_url(remote), ref="v1.4.5")
+        git = GitClient()
+
+        cloned = sync_layer(first, git=git)
+        assert cloned.action == "cloned"
+        assert (first.root / "README.md").read_text() == "first snapshot\n"
+        assert subprocess.run(
+            ["git", "rev-list", "--parents", "-n", "1", first_commit],
+            cwd=remote,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.split() == [first_commit]
+
+        second = _make_layer(tmp_path, _remote_url(remote), ref="v1.5.0")
+        advanced = sync_layer(second, git=git)
+
+        assert advanced.action == "pulled"
+        assert (second.root / "README.md").read_text() == "second snapshot\n"
+        assert subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=second.root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == second_commit
+        assert not (second.root / ".git" / "MERGE_HEAD").exists()
+
 
 # ------------------------------------------------------------------ #
 # sync_layer -- semver range: no matching tag

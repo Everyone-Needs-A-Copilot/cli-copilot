@@ -34,6 +34,7 @@ downward"):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from copilot_cli.config.layers import CliLayer, resolve_cli_layer_chain
@@ -46,6 +47,7 @@ from copilot_cli.services.git.client import GitClient
 # 40-char SHA must never be misdetected as a range.
 _RANGE_PREFIXES = ("^", "~")
 _RANGE_OPERATORS = ("<", ">", "||")
+_EXACT_RELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
 
 # `GitClient.status()` fields that indicate the working tree is dirty.
 # `tracking`/`current` are purely descriptive. `behind` alone is never grounds
@@ -193,7 +195,18 @@ def sync_layer(layer: CliLayer, git: GitClient | None = None) -> LayerSyncResult
             )
 
         try:
-            git.pull(str(root), branch=resolved_ref)
+            if layer.role == "foundation" and _EXACT_RELEASE_TAG.fullmatch(resolved_ref):
+                # Foundation releases may be signed, parentless snapshot
+                # commits. They are intentionally unrelated to the previous
+                # release, so `git pull origin <tag>` tries to merge/rebase
+                # two immutable snapshots and can leave a conflict. This is
+                # a disposable, clean, read-only mirror: fetch the published
+                # tag and check it out detached instead. The dirty/local-
+                # commit gates above still run first and therefore continue
+                # to protect anything that could be authored work.
+                git.checkout_remote_ref(str(root), ref=resolved_ref)
+            else:
+                git.pull(str(root), branch=resolved_ref)
         except Exception as exc:  # report, never crash
             return LayerSyncResult(
                 layer.id,
