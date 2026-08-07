@@ -322,13 +322,9 @@ async def _fetch_all(
                     clear_cached_grant(grant)
                 await client.close()
                 try:
-                    grant = await acquire_access_grant(
-                        broker_config, force_refresh=True
-                    )
+                    grant = await acquire_access_grant(broker_config, force_refresh=True)
                 except BrokerUnavailable as exc:
-                    raise StoreUnavailable(
-                        "store access refresh was unavailable"
-                    ) from exc
+                    raise StoreUnavailable("store access refresh was unavailable") from exc
                 client = InfisicalClient(
                     base_url=base_url,
                     timeout=_STORE_TIMEOUT,
