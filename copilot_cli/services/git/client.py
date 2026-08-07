@@ -122,6 +122,49 @@ class GitClient:
                 hint="Ensure the remote and branch exist.",
             ) from exc
 
+    def checkout_remote_ref(
+        self,
+        path: str,
+        remote: str = "origin",
+        ref: str = "",
+    ) -> dict:
+        """Fetch and detach a clean disposable mirror at an immutable ref.
+
+        Callers own the never-destroy gate. This primitive deliberately does
+        not reset a branch or merge histories; it fetches the named published
+        ref and checks out that exact ref detached, which is the correct shape
+        for parentless Foundation release snapshots.
+        """
+        repo = self._open_repo(path)
+        if not ref:
+            raise CopilotError(
+                "Checkout failed: a remote ref is required.",
+                service="git",
+                hint="Provide an immutable published tag.",
+            )
+        try:
+            remote_obj = repo.remote(remote)
+            fetch_info = remote_obj.fetch(ref)
+            target = next(
+                (item.commit.hexsha for item in fetch_info if item.commit is not None),
+                None,
+            )
+            if target is None:
+                raise ValueError(f"remote ref did not resolve: {ref}")
+            repo.git.checkout("--detach", target)
+            return {
+                "remote": remote,
+                "ref": ref,
+                "commit": target,
+                "status": "checked-out",
+            }
+        except Exception as exc:
+            raise CopilotError(
+                f"Checkout failed: {exc}",
+                service="git",
+                hint="Ensure the remote and immutable ref exist.",
+            ) from exc
+
     def status(self, path: str) -> dict:
         """Return the working-tree status of a repository.
 
