@@ -36,6 +36,7 @@ class _Response:
 
 class _FakeHTTP:
     calls: list[tuple[str, str, dict | None]] = []
+    proof_lifetime_seconds = 50
 
     def __init__(self, *args, **kwargs):
         del args, kwargs
@@ -60,7 +61,7 @@ class _FakeHTTP:
                     "nonce_id": "nonce-id-long-enough-1234",
                     "nonce": "nonce-value-long-enough-1234567890",
                     "expires_at": broker.datetime.fromtimestamp(
-                        now + 50, tz=broker.UTC
+                        now + type(self).proof_lifetime_seconds, tz=broker.UTC
                     ).isoformat(),
                 },
             )
@@ -76,7 +77,7 @@ class _FakeHTTP:
                             "identity_id": "identity-shared",
                             "assertion": "broker.assertion.value",
                             "expires_at": broker.datetime.fromtimestamp(
-                                now + 50, tz=broker.UTC
+                                now + type(self).proof_lifetime_seconds, tz=broker.UTC
                             ).isoformat(),
                         }
                     ],
@@ -134,6 +135,32 @@ async def test_broker_flow_exchanges_scope_assertion_and_caches_only_short_lived
     cached = await broker.acquire_access_grant(broker_config)
     assert cached.token == grant.token
     assert len(_FakeHTTP.calls) == call_count
+
+
+@pytest.mark.asyncio
+async def test_broker_accepts_bounded_clock_skew_at_proof_lifetime_boundary(
+    broker_config, monkeypatch
+):
+    _FakeHTTP.calls = []
+    monkeypatch.setattr(_FakeHTTP, "proof_lifetime_seconds", 60.5)
+    monkeypatch.setattr(broker.httpx, "AsyncClient", _FakeHTTP)
+    monkeypatch.setattr(broker, "_sign", lambda path, message: "signed-proof")
+
+    grant = await broker.acquire_access_grant(broker_config, force_refresh=True)
+
+    assert grant.identity_id == "identity-shared"
+
+
+@pytest.mark.asyncio
+async def test_broker_rejects_proof_lifetime_beyond_clock_skew_tolerance(
+    broker_config, monkeypatch
+):
+    _FakeHTTP.calls = []
+    monkeypatch.setattr(_FakeHTTP, "proof_lifetime_seconds", 66)
+    monkeypatch.setattr(broker.httpx, "AsyncClient", _FakeHTTP)
+
+    with pytest.raises(BrokerUnavailable, match="invalid challenge"):
+        await broker.acquire_access_grant(broker_config, force_refresh=True)
 
 
 @pytest.mark.asyncio
