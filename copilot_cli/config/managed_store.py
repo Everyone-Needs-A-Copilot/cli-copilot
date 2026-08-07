@@ -62,6 +62,13 @@ _NEVER_FROM_STORE = frozenset(
         "INFISICAL_WORKSPACE_ID",
         "INFISICAL_ENVIRONMENT",
         "INFISICAL_SECRET_PATH",
+        "INFISICAL_BROKER_URL",
+        "INFISICAL_BROKER_ISSUER",
+        "INFISICAL_BROKER_AUDIENCE",
+        "INFISICAL_BROKER_ORG",
+        "INFISICAL_STORE_SCOPE",
+        "INFISICAL_SSH_PUBLIC_KEY",
+        "INFISICAL_AUTH_ROOT",
     }
 )
 
@@ -70,10 +77,11 @@ _NEVER_FROM_STORE = frozenset(
 # stalling every CLI invocation.
 _STORE_TIMEOUT = 6.0
 
-# Per-process cache: (base_url, workspace, env, path) -> {SECRET_NAME: value}.
+# Per-process cache: (base_url, workspace, env, path, broker, scope) ->
+# {SECRET_NAME: value}.
 # One `list_secrets` amortises across all `requires_secret` fields resolved in a
 # single command; cleared naturally when the process exits.
-_SECRET_CACHE: dict[tuple[str, str, str, str], dict[str, str]] = {}
+_SECRET_CACHE: dict[tuple[str, str, str, str, str, str], dict[str, str]] = {}
 
 # Cross-process cache of the short-lived Infisical access token (NOT secret
 # values -- those are never written to disk). Avoids re-authenticating on every
@@ -208,6 +216,13 @@ def _find_store_layer(chain: list[CliLayer]):
         "INFISICAL_SECRET_PATH",
         "INFISICAL_CLIENT_ID",
         "INFISICAL_CLIENT_SECRET",
+        "INFISICAL_BROKER_URL",
+        "INFISICAL_BROKER_ISSUER",
+        "INFISICAL_BROKER_AUDIENCE",
+        "INFISICAL_BROKER_ORG",
+        "INFISICAL_STORE_SCOPE",
+        "INFISICAL_SSH_PUBLIC_KEY",
+        "INFISICAL_AUTH_ROOT",
     }
     for layer in chain:
         env_cfg = _parse_env_keys(layer.env_path, wanted)
@@ -236,6 +251,7 @@ async def _fetch_all(
     workspace: str,
     environment: str,
     secret_path: str,
+    broker_cfg: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """Authenticate and bulk-read every secret at the tier's path into a
     ``{name: value}`` dict. Raises `StoreUnavailable` on any failure."""
@@ -248,17 +264,52 @@ async def _fetch_all(
         ConnectionError as InfisicalConnectionError,
     )
 
-    try:
-        client = InfisicalClient(
-            base_url=base_url,
-            client_id=client_id,
-            client_secret=client_secret,
-            timeout=_STORE_TIMEOUT,
+    grant = None
+    if broker_cfg is not None:
+        from copilot_cli.config.broker_auth import (
+            BrokerConfig,
+            BrokerUnavailable,
+            acquire_access_grant,
+            clear_cached_grant,
         )
-    except (AuthenticationError, InfisicalConnectionError) as exc:
-        raise StoreUnavailable(f"store client init failed: {exc}") from exc
 
-    cached = _load_cached_token(base_url, client_id)
+        broker_config = BrokerConfig(
+            broker_url=broker_cfg.get("INFISICAL_BROKER_URL", ""),
+            issuer=broker_cfg.get("INFISICAL_BROKER_ISSUER", ""),
+            audience=broker_cfg.get("INFISICAL_BROKER_AUDIENCE", ""),
+            organization=broker_cfg.get("INFISICAL_BROKER_ORG", ""),
+            scope=broker_cfg.get("INFISICAL_STORE_SCOPE", "shared"),
+            infisical_url=base_url,
+            public_key_path=Path(
+                broker_cfg.get("INFISICAL_SSH_PUBLIC_KEY", "")
+                or Path.home() / ".ssh" / "id_ed25519_copilot.pub"
+            ),
+            auth_root=Path(
+                broker_cfg.get("INFISICAL_AUTH_ROOT", "") or Path.home() / ".copilot" / "auth"
+            ),
+        )
+        try:
+            grant = await acquire_access_grant(broker_config)
+            client = InfisicalClient(
+                base_url=base_url,
+                timeout=_STORE_TIMEOUT,
+                access_token=grant.token,
+                read_only=True,
+            )
+        except (BrokerUnavailable, AuthenticationError, InfisicalConnectionError) as exc:
+            raise StoreUnavailable(f"store client init failed: {exc}") from exc
+    else:
+        try:
+            client = InfisicalClient(
+                base_url=base_url,
+                client_id=client_id,
+                client_secret=client_secret,
+                timeout=_STORE_TIMEOUT,
+            )
+        except (AuthenticationError, InfisicalConnectionError) as exc:
+            raise StoreUnavailable(f"store client init failed: {exc}") from exc
+
+    cached = _load_cached_token(base_url, client_id) if broker_cfg is None else None
     if cached:
         client._token = cached  # skip the auth round-trip; verified below by use
 
@@ -266,17 +317,38 @@ async def _fetch_all(
         try:
             items = await client.list_secrets(workspace, environment, secret_path)
         except AuthenticationError:
-            # No/stale cached token -> authenticate fresh exactly once and
-            # persist the new token for the next process, then retry the read.
-            client._token = None
-            _clear_cached_token(base_url, client_id)
-            await client.authenticate()
-            _save_cached_token(base_url, client_id, client._token or "")
-            items = await client.list_secrets(workspace, environment, secret_path)
+            if broker_cfg is not None:
+                if grant is not None:
+                    clear_cached_grant(grant)
+                await client.close()
+                try:
+                    grant = await acquire_access_grant(
+                        broker_config, force_refresh=True
+                    )
+                except BrokerUnavailable as exc:
+                    raise StoreUnavailable(
+                        "store access refresh was unavailable"
+                    ) from exc
+                client = InfisicalClient(
+                    base_url=base_url,
+                    timeout=_STORE_TIMEOUT,
+                    access_token=grant.token,
+                    read_only=True,
+                )
+                items = await client.list_secrets(workspace, environment, secret_path)
+                cached = None
+            else:
+                # No/stale cached token -> authenticate fresh exactly once and
+                # persist the new token for the next process, then retry the read.
+                client._token = None
+                _clear_cached_token(base_url, client_id)
+                await client.authenticate()
+                _save_cached_token(base_url, client_id, client._token or "")
+                items = await client.list_secrets(workspace, environment, secret_path)
         else:
             # list_secrets auto-authenticates when no token was cached; persist
             # whatever token the client now holds so the next process reuses it.
-            if not cached and client._token:
+            if broker_cfg is None and not cached and client._token:
                 _save_cached_token(base_url, client_id, client._token)
     except (APIError, AuthenticationError, InfisicalConnectionError) as exc:
         raise StoreUnavailable(f"store read failed: {exc}") from exc
@@ -314,15 +386,31 @@ def resolve_from_store(name: str, chain: list[CliLayer]) -> str:
 
     client_id = _read_bootstrap_cred("INFISICAL_CLIENT_ID", cfg)
     client_secret = _read_bootstrap_cred("INFISICAL_CLIENT_SECRET", cfg)
-    if not client_id or not client_secret:
+    broker_url = cfg.get("INFISICAL_BROKER_URL", "")
+    if not broker_url and (not client_id or not client_secret):
         raise StoreUnavailable("no machine-identity bootstrap credentials for the store")
 
-    cache_key = (base_url, workspace, environment, secret_path)
+    cache_key = (
+        base_url,
+        workspace,
+        environment,
+        secret_path,
+        broker_url,
+        cfg.get("INFISICAL_STORE_SCOPE", "shared"),
+    )
     secrets = _SECRET_CACHE.get(cache_key)
     if secrets is None:
         try:
             secrets = asyncio.run(
-                _fetch_all(base_url, client_id, client_secret, workspace, environment, secret_path)
+                _fetch_all(
+                    base_url,
+                    client_id,
+                    client_secret,
+                    workspace,
+                    environment,
+                    secret_path,
+                    cfg if broker_url else None,
+                )
             )
         except RuntimeError as exc:
             # e.g. called with an event loop already running — fall through

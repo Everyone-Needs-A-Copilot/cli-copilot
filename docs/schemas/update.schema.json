@@ -61,7 +61,7 @@
         "status": {
           "type": "string",
           "enum": ["ready", "creds_missing", "none"],
-          "description": "'ready': a layer declares store config (INFISICAL_WORKSPACE_ID) AND bootstrap credentials (INFISICAL_CLIENT_ID/_SECRET) are present on this machine (keychain or that tier's .env) -- does NOT confirm the credentials are valid, since that requires a network auth round-trip this report deliberately never performs. 'creds_missing': store config is declared but bootstrap credentials are absent on this machine. 'none': no layer in the resolved chain declares store config at all -- the dormant default, matching `managed_store`'s own 'absent, not misconfigured' contract."
+          "description": "'ready': a layer declares store config and either a complete GitHub-broker configuration or a present legacy Universal Auth pair. This presence-only update report does NOT claim live authentication succeeded; its detail says live broker access is checked when used. 'creds_missing': the selected authentication configuration is incomplete. 'none': no layer in the resolved chain declares store config at all."
         },
         "detail": { "type": "string", "description": "Human-readable status line, identical to what the non-JSON `update` output prints. Never contains a secret value." },
         "layer_id": { "type": ["string", "null"], "description": "The nearest layer declaring the store, or null when `status` is 'none'." }

@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 
 from copilot_cli.services.infisical.core.api_client import InfisicalClient
-from copilot_cli.services.infisical.core.config import load_settings
+from copilot_cli.services.infisical.core.config import broker_config, load_settings
 from copilot_cli.services.infisical.output.console import console, err_console
 
 # ─── Global state ─────────────────────────────────────────────────────────────
@@ -30,6 +30,25 @@ class State:
             return self._client
 
         settings = load_settings()
+        broker_url = getattr(settings, "broker_url", "")
+        if isinstance(broker_url, str) and broker_url.strip():
+            from copilot_cli.config.broker_auth import (
+                BrokerUnavailable,
+                acquire_access_grant,
+            )
+
+            try:
+                grant = run_async(acquire_access_grant(broker_config(settings)))
+            except BrokerUnavailable as exc:
+                err_console.print(f"[error]Shared access unavailable:[/error] {exc}")
+                raise typer.Exit(1) from exc
+            self._client = InfisicalClient(
+                base_url=settings.base_url,
+                access_token=grant.token,
+                read_only=True,
+            )
+            return self._client
+
         if not settings.client_id or not settings.client_secret:
             err_console.print(
                 "[error]Infisical credentials not configured.[/error]\n"
@@ -137,6 +156,8 @@ def config_show() -> None:
             "base_url": settings.base_url,
             "client_id": masked_id,
             "org_id": settings.org_id or "(auto-discover)",
+            "auth_mode": "github-broker" if settings.broker_url else "universal-auth",
+            "store_scope": settings.store_scope if settings.broker_url else None,
         }
         # Auth check
         try:
@@ -156,7 +177,11 @@ def config_show() -> None:
     table.add_column("Key", style="label", width=20)
     table.add_column("Value")
     table.add_row("Base URL", settings.base_url)
-    table.add_row("Client ID", masked_id)
+    table.add_row("Auth mode", "GitHub broker" if settings.broker_url else "Universal Auth")
+    if not settings.broker_url:
+        table.add_row("Client ID", masked_id)
+    else:
+        table.add_row("Store scope", settings.store_scope)
     table.add_row("Org ID", settings.org_id or "[dim]auto-discover[/dim]")
     console.print(table)
 
@@ -182,6 +207,7 @@ def _register_commands() -> None:
         ("copilot_cli.services.infisical.commands.secret", "secret"),
         ("copilot_cli.services.infisical.commands.identity", "identity"),
         ("copilot_cli.services.infisical.commands.org", "org"),
+        ("copilot_cli.services.infisical.commands.access", "access"),
     ]
 
     import importlib

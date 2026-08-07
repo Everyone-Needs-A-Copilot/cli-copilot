@@ -49,6 +49,13 @@ class InfisicalSettings(BaseSettings):
     client_secret: str = ""
     base_url: str = _DEFAULT_BASE_URL
     org_id: str = ""
+    broker_url: str = ""
+    broker_issuer: str = ""
+    broker_audience: str = ""
+    broker_org: str = ""
+    store_scope: str = "shared"
+    ssh_public_key: str = ""
+    auth_root: str = ""
 
     model_config = {"env_prefix": "INFISICAL_", "extra": "ignore"}
 
@@ -154,10 +161,28 @@ def load_settings() -> InfisicalSettings:
     """
     env_file = find_env_file()
     settings = InfisicalSettings(_env_file=env_file)
-    if "base_url" not in settings.model_fields_set:
-        tier_base_url = _tier_config_value("infisical_base_url")
-        if tier_base_url:
-            settings = settings.model_copy(update={"base_url": tier_base_url})
+    tier_fields = {
+        "base_url": "infisical_base_url",
+        "broker_url": "infisical_broker_url",
+        "broker_issuer": "infisical_broker_issuer",
+        "broker_audience": "infisical_broker_audience",
+        "broker_org": "infisical_broker_org",
+        "store_scope": "infisical_store_scope",
+        "ssh_public_key": "infisical_ssh_public_key",
+        "auth_root": "infisical_auth_root",
+    }
+    updates: dict[str, str] = {}
+    for field, tier_key in tier_fields.items():
+        if field not in settings.model_fields_set:
+            tier_value = _tier_config_value(tier_key)
+            if tier_value:
+                updates[field] = tier_value
+    if updates:
+        settings = settings.model_copy(update=updates)
+    if settings.broker_url:
+        # A configured interactive broker is an explicit fail-closed path.
+        # Never read or silently fall back to a long-lived Universal Auth pair.
+        return settings
     if not settings.client_id or not settings.client_secret:
         client_id = settings.client_id or _keychain_lookup("INFISICAL_CLIENT_ID")
         client_secret = settings.client_secret or _keychain_lookup("INFISICAL_CLIENT_SECRET")
@@ -171,6 +196,15 @@ def load_settings() -> InfisicalSettings:
 def require_settings() -> InfisicalSettings:
     """Load settings and raise ConfigError when required credentials are missing."""
     settings = load_settings()
+    if settings.broker_url:
+        missing_broker: list[str] = []
+        for field in ("broker_issuer", "broker_audience", "broker_org", "store_scope"):
+            if not getattr(settings, field):
+                missing_broker.append(field)
+        if missing_broker:
+            raise ConfigError("Missing required broker configuration: " + "; ".join(missing_broker))
+        return settings
+
     missing: list[str] = []
     if not settings.client_id:
         missing.append("client_id (set INFISICAL_CLIENT_ID)")
@@ -179,3 +213,29 @@ def require_settings() -> InfisicalSettings:
     if missing:
         raise ConfigError("Missing required Infisical configuration: " + "; ".join(missing))
     return settings
+
+
+def broker_config(settings: InfisicalSettings):
+    """Build the validated-path input for the interactive broker client.
+
+    Kept here so the service CLI, top-level health command, and tests resolve
+    the same non-secret defaults. Validation itself remains in broker_auth.
+    """
+    from copilot_cli.config.broker_auth import BrokerConfig
+
+    return BrokerConfig(
+        broker_url=settings.broker_url,
+        issuer=settings.broker_issuer,
+        audience=settings.broker_audience,
+        organization=settings.broker_org,
+        scope=settings.store_scope,
+        infisical_url=settings.base_url,
+        public_key_path=(
+            Path(settings.ssh_public_key)
+            if settings.ssh_public_key
+            else Path.home() / ".ssh" / "id_ed25519_copilot.pub"
+        ),
+        auth_root=(
+            Path(settings.auth_root) if settings.auth_root else Path.home() / ".copilot" / "auth"
+        ),
+    )

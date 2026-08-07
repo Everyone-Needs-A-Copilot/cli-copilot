@@ -165,20 +165,37 @@ def _collect_health_checks() -> tuple[list[tuple[str, callable]], list[str]]:
         import asyncio
 
         from .services.infisical.core.api_client import InfisicalClient
-        from .services.infisical.core.config import load_settings as load_infisical_settings
+        from .services.infisical.core.config import (
+            broker_config,
+        )
+        from .services.infisical.core.config import (
+            load_settings as load_infisical_settings,
+        )
 
         def _infisical_health():
             settings = load_infisical_settings()
-            if not settings.client_id or not settings.client_secret:
+            broker_url = getattr(settings, "broker_url", "")
+            broker_enabled = isinstance(broker_url, str) and bool(broker_url.strip())
+            if not broker_enabled and (not settings.client_id or not settings.client_secret):
                 return {
                     "healthy": False,
                     "error": "Missing INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET",
                 }
 
             async def _check():
-                client = InfisicalClient(
-                    settings.base_url, settings.client_id, settings.client_secret
-                )
+                if broker_enabled:
+                    from .config.broker_auth import acquire_access_grant
+
+                    grant = await acquire_access_grant(broker_config(settings))
+                    client = InfisicalClient(
+                        settings.base_url,
+                        access_token=grant.token,
+                        read_only=True,
+                    )
+                else:
+                    client = InfisicalClient(
+                        settings.base_url, settings.client_id, settings.client_secret
+                    )
                 try:
                     identity = await client.validate_connection()
                     return {"healthy": True, "identity": identity}
