@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://everyoneneedsacopilot.com/schemas/cli-copilot/layers.schema.json",
+  "title": "copilot --json layers",
+  "description": "Output of `copilot --json layers` (cli-copilot foundation). Reports the resolved `component: cli` tier chain (from `copilot.layers.yml`, if any resolves) and per-service provenance (which tier each registered service resolves from, and whether it is a base/adopted/overridden/added service). Computed entirely CLI-side by `config/layers.py` + `services/_loader.py` -- a consumer (e.g. Control Tower) only ever renders this payload (invariant #1: parse, never compute). NOTE: this is a distinct contract from copilot-control-tower's own `layers [join]` schema, which covers department/org entitlement discovery for the content components (claude/knowledge/codex) on a different CLI program -- see that repo's docs/01-architecture/schemas/layers.schema.json. The two are unrelated verbs that happen to share a name.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "component", "manifest", "chain", "services"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version for this payload shape."
+    },
+    "component": {
+      "type": "string",
+      "const": "cli",
+      "description": "Which CSE component this report covers. Always 'cli' for this CLI's own `layers` command."
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "cli_layers_resolved"],
+      "properties": {
+        "path": {
+          "type": ["string", "null"],
+          "description": "Absolute path to the `copilot.layers.yml` found on disk, or null if none resolves at all. May be non-null even when `cli_layers_resolved` is false (a manifest exists but has zero `component: cli` entries)."
+        },
+        "cli_layers_resolved": {
+          "type": "boolean",
+          "description": "Whether a non-empty `component: cli` chain was resolved. False is the Phase-1 inert state: the CLI runs the base foundation only, byte-identical to v1.4.5."
+        }
+      }
+    },
+    "chain": {
+      "type": "array",
+      "description": "The resolved `cli` layer chain, highest precedence first (personal -> department -> org -> foundation). Empty when `manifest.cli_layers_resolved` is false.",
+      "items": { "$ref": "#/$defs/layer" }
+    },
+    "services": {
+      "type": "array",
+      "description": "Every registered `copilot <name>` service group, in registration order.",
+      "items": { "$ref": "#/$defs/service" }
+    }
+  },
+  "$defs": {
+    "layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "rank", "repo", "ref", "auth", "unit"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Stable layer identifier from the manifest, e.g. 'org-acme'." },
+        "role": { "type": "string", "minLength": 1, "description": "Open vocabulary tier role, e.g. 'personal' | 'department' | 'org' | 'foundation'. Unknown roles are valid -- this is what keeps the model N-tier-extensible." },
+        "rank": { "type": "integer", "description": "Precedence of record; lower rank = higher precedence. `chain` is always pre-sorted ascending by this value." },
+        "repo": { "type": "string", "minLength": 1, "description": "This layer's source repo (git URL or 'owner/name' slug)." },
+        "ref": { "type": "string", "minLength": 1, "description": "Git ref or semver range this layer pins to." },
+        "auth": { "type": "string", "minLength": 1, "description": "SSH host alias or 'anon' this layer's sync uses -- never a credential value." },
+        "unit": { "type": ["string", "null"], "description": "Which department this layer serves, when `role` is 'department'; null otherwise." }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "help", "tier", "mode"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "description": "The `copilot <name>` command group." },
+        "help": { "type": "string", "description": "One-line help text shown in `copilot --help`." },
+        "tier": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which layer id this service currently resolves from. 'foundation' for every service in the Phase-1 inert state (no manifest)."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["base", "adopt", "override", "provides"],
+          "description": "'base': foundation's own service, untouched. 'adopt': a tier turned this base service on with its own config/secrets only (zero code). 'override': a tier replaced this service's command with its own implementation. 'provides': a tier added a service that does not exist in the base 12 at all."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "OPTIONAL, additive. Stable slug of `name` (lowercase, non-alphanumeric runs collapsed to a single hyphen). Equal to `name` for every service today; exists so a future display-style `name` need not also be a valid identifier."
+        },
+        "requires_secret": {
+          "type": "array",
+          "description": "OPTIONAL, additive. Every credential NAME this service's declaring tier (`adopt`/`provides`/`override` in that tier's `cli.overlay.yml`) declared under `requires_secret`, in declaration order. Names only, never values. Empty array when the service declares none (including every base/foundation service).",
+          "items": { "$ref": "#/$defs/requiredSecret" }
+        },
+        "store_scope": {
+          "type": ["string", "null"],
+          "description": "OPTIONAL, additive. This service's declared `store_scope` (maps to the org's `ecosystem.yml` `team_scopes`), or null when the declaring tier's overlay entry does not set one -- the common case today."
+        }
+      }
+    },
+    "requiredSecret": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "from"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "description": "The credential name resolved via the credential ladder. Never a value." },
+        "from": {
+          "type": "string",
+          "enum": ["any", "store", "keychain"],
+          "description": "Routing hint restricting which credential-ladder rungs are tried for this name. 'any' is the default when the overlay declares a bare string name (tries every rung)."
+        }
+      }
+    }
+  }
+}

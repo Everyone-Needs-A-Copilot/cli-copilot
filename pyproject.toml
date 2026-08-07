@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "copilot-cli"
+version = "1.4.12"
+description = "Unified CLI for infrastructure, APIs, databases, and monitoring — portable across all Copilot projects."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "httpx>=0.25.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "python-dotenv>=1.0.0",
+    "gitpython>=3.1.0",
+    "docker>=6.0.0",
+    "pyyaml>=6.0",
+    "playwright>=1.41.0",
+    "packaging>=23.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.0.0",
+    "ruff==0.15.20",
+]
+
+[project.scripts]
+copilot = "copilot_cli.main:app"
+cli_copilot = "copilot_cli.main:app"
+
+[project.urls]
+Repository = "https://github.com/<your-org>/cli-copilot"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["copilot_cli*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "RUF"]
+ignore = ["E501", "B008", "B904", "B905", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+"copilot_cli/main.py" = ["E402"]
+"tests/**" = ["E402", "F401", "F811", "RUF012"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "e2e: live end-to-end connectivity checks against configured services",
+]
