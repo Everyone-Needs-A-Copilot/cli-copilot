@@ -12,7 +12,7 @@ from copilot_cli.services.infisical.core.exceptions import AuthenticationError
 
 
 class _Client:
-    negative_is_denied = True
+    negative_result = "denied"
 
     def __init__(self, *args, **kwargs):
         del args, kwargs
@@ -21,9 +21,11 @@ class _Client:
         del project, env
         if path == "/shared":
             return [{"secretKey": "A", "secretValue": "must-not-leak"}]
-        if self.negative_is_denied:
+        if self.negative_result == "denied":
             raise AuthenticationError("Access denied — check identity permissions")
-        return []
+        if self.negative_result == "filtered":
+            return []
+        return [{"secretKey": "CANARY", "secretValue": "must-not-leak"}]
 
     async def close(self):
         pass
@@ -59,7 +61,7 @@ def installed(monkeypatch):
 
 
 def test_verify_proves_positive_read_and_negative_denial_without_secret_data(installed):
-    _Client.negative_is_denied = True
+    _Client.negative_result = "denied"
     access.verify("workspace", "prod", "/shared", "/denied", "shared")
 
     assert installed == [
@@ -78,14 +80,25 @@ def test_verify_proves_positive_read_and_negative_denial_without_secret_data(ins
 
 
 def test_verify_fails_when_negative_path_is_readable(installed):
-    _Client.negative_is_denied = False
+    _Client.negative_result = "readable"
     with pytest.raises(typer.Exit):
         access.verify("workspace", "prod", "/shared", "/denied", "shared")
     assert installed[0]["result"] == "unsafe"
     assert installed[0]["read_only"] is False
 
 
+def test_verify_accepts_infisical_filtered_empty_canary_response(installed):
+    _Client.negative_result = "filtered"
+
+    access.verify("workspace", "prod", "/shared", "/denied", "shared")
+
+    assert installed[0]["result"] == "ready"
+    assert installed[0]["negative_denied"] is True
+    assert installed[0]["read_only"] is True
+
+
 def test_verify_refuses_unprovable_root_scope(installed):
+    _Client.negative_result = "denied"
     with pytest.raises(typer.Exit):
         access.verify("workspace", "prod", "/", "/denied", "shared")
     assert installed[0]["result"] == "invalid-config"
