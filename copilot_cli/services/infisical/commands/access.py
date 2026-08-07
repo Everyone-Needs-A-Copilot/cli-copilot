@@ -63,7 +63,10 @@ def verify(
     path: Annotated[str, typer.Option("--path", help="Authorized secret path")] = "/shared",
     negative_path: Annotated[
         str,
-        typer.Option("--negative-path", help="Path that must be denied"),
+        typer.Option(
+            "--negative-path",
+            help="Known-nonempty canary path whose secrets must not be visible",
+        ),
     ] = "/__control_tower_denied__",
     scope: Annotated[
         str,
@@ -121,10 +124,18 @@ def verify(
         try:
             items = await client.list_secrets(project, env, normalized)
             try:
-                await client.list_secrets(project, env, negative)
+                negative_items = await client.list_secrets(project, env, negative)
             except AuthenticationError as exc:
                 if "access denied" not in str(exc).casefold():
                     raise
+                return _report(
+                    result="ready",
+                    detail="Shared access is ready and limited to the approved path.",
+                    positive_read=True,
+                    negative_denied=True,
+                    secret_count=len(items),
+                )
+            if not negative_items:
                 return _report(
                     result="ready",
                     detail="Shared access is ready and limited to the approved path.",
