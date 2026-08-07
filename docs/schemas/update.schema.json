@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://everyoneneedsacopilot.com/schemas/cli-copilot/update.schema.json",
+  "title": "copilot --json update",
+  "description": "Output of `copilot --json update` (cli-copilot foundation). Reports the outcome of syncing each resolved `component: cli` tier's read-only mirror (`config/sync.py`) plus a presence-only managed-secret-store readiness report (`config/store_readiness.py`). Computed entirely CLI-side -- a consumer (e.g. Control Tower) only ever renders this payload (invariant #1: parse, never compute); it contains no secret VALUE, ever. Sibling contract to `docs/schemas/layers.schema.json` (`copilot --json layers`), which reports resolved chain/service provenance without syncing anything.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "component", "overall", "layers", "store"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version for this payload shape."
+    },
+    "component": {
+      "type": "string",
+      "const": "cli",
+      "description": "Which CSE component this report covers. Always 'cli' for this CLI's own `update` command."
+    },
+    "overall": {
+      "type": "string",
+      "enum": ["ok", "attention", "error"],
+      "description": "'ok': every layer cloned/pulled cleanly (or there were zero layers). 'attention': at least one layer was 'held' (never-destroy gate) or 'skipped' (semver range with no matching tag) -- no data was lost, but something needs a human look. 'error': at least one layer's sync itself failed (network/git error)."
+    },
+    "layers": {
+      "type": "array",
+      "description": "Per-layer sync outcome, in the same precedence order as `copilot --json layers`'s `chain` (highest precedence first). Empty when no `copilot.layers.yml` resolves a 'cli' component chain at all -- nothing to sync.",
+      "items": { "$ref": "#/$defs/layer_result" }
+    },
+    "store": {
+      "$ref": "#/$defs/store_readiness",
+      "description": "Presence-only managed-secret-store readiness report -- never a secret value, never the result of a network auth attempt, never triggers provisioning."
+    }
+  },
+  "$defs": {
+    "layer_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "ref", "resolved_ref", "action", "detail"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Stable layer identifier from the manifest, e.g. 'org-acme'." },
+        "role": { "type": "string", "description": "Open vocabulary tier role, e.g. 'personal' | 'department' | 'org' | 'foundation'." },
+        "ref": { "type": "string", "description": "This layer's declared `source.ref`, exactly as written in the manifest -- may be a concrete branch/tag/SHA or a semver RANGE (e.g. '^1.4.5')." },
+        "resolved_ref": {
+          "type": "string",
+          "description": "The concrete ref actually used/considered for this sync. Equal to `ref` when `ref` was already concrete. The picked tag when `ref` was a semver range that resolved successfully (e.g. 'v1.5.9' for a `ref` of '^1.4.5'). Empty string when no ref could be resolved at all (malformed range, tag listing failed, or no tag satisfied the range) -- `action` is 'skipped' or 'error' in that case."
+        },
+        "action": {
+          "type": "string",
+          "enum": ["cloned", "pulled", "held", "skipped", "error"],
+          "description": "'cloned': mirror was absent and is now cloned. 'pulled': mirror existed, was clean, and was fast-forwarded. 'held': the never-destroy gate withheld a write (dirty tree, unpushed local commits, unreadable status, or a non-git occupant at the mirror path) -- zero writes occurred. 'skipped': a semver-range `ref` had no tag satisfying it -- zero writes occurred. 'error': the sync itself failed (network/git error) -- zero writes assumed, never guaranteed beyond what git itself guarantees on a failed clone/pull."
+        },
+        "detail": { "type": "string", "description": "Human-readable one-line reason/summary for `action`, e.g. 'local changes', '@ v1.5.9 (^1.4.5)', 'no tag matches '^1.4.5''." }
+      }
+    },
+    "store_readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "detail", "layer_id"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["ready", "creds_missing", "none"],
+          "description": "'ready': a layer declares store config and either a complete GitHub-broker configuration or a present legacy Universal Auth pair. This presence-only update report does NOT claim live authentication succeeded; its detail says live broker access is checked when used. 'creds_missing': the selected authentication configuration is incomplete. 'none': no layer in the resolved chain declares store config at all."
+        },
+        "detail": { "type": "string", "description": "Human-readable status line, identical to what the non-JSON `update` output prints. Never contains a secret value." },
+        "layer_id": { "type": ["string", "null"], "description": "The nearest layer declaring the store, or null when `status` is 'none'." }
+      }
+    }
+  }
+}

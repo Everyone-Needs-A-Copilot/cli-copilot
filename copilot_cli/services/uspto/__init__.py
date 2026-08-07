@@ -1,0 +1,1 @@
+"""USPTO API service."""
