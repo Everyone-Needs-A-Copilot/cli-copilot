@@ -32,9 +32,11 @@ from dataclasses import dataclass
 from copilot_cli.config.layers import CliLayer
 
 _READY = "store: ready"
+_BROKER_READY = "store: GitHub access configured; live access is checked when used"
 _CREDS_MISSING = (
     "store: config present, bootstrap creds missing on this machine (provision to authenticate)"
 )
+_BROKER_INCOMPLETE = "store: GitHub access configuration is incomplete"
 _NONE_DECLARED = "store: none declared"
 
 
@@ -69,6 +71,17 @@ def check_store_readiness(chain: list[CliLayer]) -> StoreReadiness:
         return StoreReadiness(status="none", detail=_NONE_DECLARED)
 
     layer, cfg = found
+    if cfg.get("INFISICAL_BROKER_URL"):
+        required = (
+            "INFISICAL_BROKER_ISSUER",
+            "INFISICAL_BROKER_AUDIENCE",
+            "INFISICAL_BROKER_ORG",
+            "INFISICAL_STORE_SCOPE",
+        )
+        if all(cfg.get(name) for name in required):
+            return StoreReadiness(status="ready", detail=_BROKER_READY, layer_id=layer.id)
+        return StoreReadiness(status="creds_missing", detail=_BROKER_INCOMPLETE, layer_id=layer.id)
+
     client_id_present = bool(_read_bootstrap_cred("INFISICAL_CLIENT_ID", cfg))
     client_secret_present = bool(_read_bootstrap_cred("INFISICAL_CLIENT_SECRET", cfg))
 

@@ -53,8 +53,8 @@ def _decode_jwt_payload(token: str) -> dict:
     """Decode a JWT payload without verifying the signature."""
     try:
         part = token.split(".")[1]
-        part += "=" * (4 - len(part) % 4)
-        return json.loads(base64.b64decode(part).decode("utf-8"))
+        part += "=" * (-len(part) % 4)
+        return json.loads(base64.urlsafe_b64decode(part).decode("utf-8"))
     except Exception:
         return {}
 
@@ -65,21 +65,26 @@ class InfisicalClient:
     def __init__(
         self,
         base_url: str,
-        client_id: str,
-        client_secret: str,
+        client_id: str = "",
+        client_secret: str = "",
         timeout: float = 30.0,
+        *,
+        access_token: str | None = None,
+        read_only: bool = False,
     ):
         if not base_url:
             raise ConnectionError("Infisical base URL is required")
-        if not client_id or not client_secret:
+        if not access_token and (not client_id or not client_secret):
             raise AuthenticationError(
-                "INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET are required"
+                "an Infisical access token or Universal Auth credentials are required"
             )
 
         self.base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
-        self._token: str | None = None
+        self._token: str | None = access_token
+        self._direct_access_token = bool(access_token)
+        self._read_only = read_only
         self._identity_id: str | None = None
         self._org_id: str | None = None
 
@@ -102,6 +107,10 @@ class InfisicalClient:
 
     async def authenticate(self) -> str:
         """Login via Universal Auth and cache the access token."""
+        if self._direct_access_token:
+            if self._token:
+                return self._token
+            raise AuthenticationError("The short-lived Infisical access token expired")
         try:
             response = await self._http.post(
                 "/api/v1/auth/universal-auth/login",
@@ -157,6 +166,8 @@ class InfisicalClient:
         json_data: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
     ) -> Any:
+        if self._read_only and method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+            raise AuthenticationError("This GitHub-authorized shared-store session is read-only")
         await self._ensure_authenticated()
         clean_params = {k: str(v) for k, v in (params or {}).items() if v is not None}
         try:

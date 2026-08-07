@@ -17,6 +17,9 @@ import copilot_cli.config.managed_store as ms
 from copilot_cli.config.layers import CliLayer
 from copilot_cli.config.managed_store import StoreUnavailable, resolve_from_store
 from copilot_cli.services.infisical.core.exceptions import (
+    AuthenticationError,
+)
+from copilot_cli.services.infisical.core.exceptions import (
     ConnectionError as InfisicalConnectionError,
 )
 
@@ -134,6 +137,105 @@ class TestRecursionGuard:
 
 
 class TestResolution:
+    def test_broker_configuration_never_requires_or_falls_back_to_universal_auth(
+        self, tmp_path, monkeypatch
+    ):
+        from copilot_cli.config.broker_auth import AccessGrant
+
+        observed: dict[str, object] = {}
+
+        async def _grant(config, force_refresh=False):
+            observed["config"] = config
+            observed["force_refresh"] = force_refresh
+            return AccessGrant("short-lived-token", "identity-shared", 9_999_999_999)
+
+        class _BrokerClient:
+            def __init__(self, **kwargs):
+                observed["client"] = kwargs
+                self._token = kwargs.get("access_token")
+
+            async def list_secrets(self, workspace, environment, secret_path="/"):
+                observed["scope"] = (workspace, environment, secret_path)
+                return [{"secretKey": "K", "secretValue": "value"}]
+
+            async def close(self):
+                pass
+
+        monkeypatch.setattr("copilot_cli.config.broker_auth.acquire_access_grant", _grant)
+        monkeypatch.setattr(
+            "copilot_cli.services.infisical.core.api_client.InfisicalClient",
+            _BrokerClient,
+        )
+        layer = _layer(
+            tmp_path,
+            "INFISICAL_BASE_URL=https://secrets.example.test\n"
+            "INFISICAL_WORKSPACE_ID=ws-123\n"
+            "INFISICAL_ENVIRONMENT=prod\n"
+            "INFISICAL_SECRET_PATH=/shared\n"
+            "INFISICAL_BROKER_URL=https://access.example.test\n"
+            "INFISICAL_BROKER_ISSUER=https://access.example.test\n"
+            "INFISICAL_BROKER_AUDIENCE=https://secrets.example.test\n"
+            "INFISICAL_BROKER_ORG=Example-Org\n"
+            "INFISICAL_STORE_SCOPE=shared\n",
+        )
+
+        assert resolve_from_store("K", [layer]) == "value"
+        assert observed["client"] == {
+            "base_url": "https://secrets.example.test",
+            "timeout": ms._STORE_TIMEOUT,
+            "access_token": "short-lived-token",
+            "read_only": True,
+        }
+
+    def test_broker_refresh_failure_falls_through_without_universal_auth(
+        self, tmp_path, monkeypatch
+    ):
+        from copilot_cli.config.broker_auth import AccessGrant, BrokerUnavailable
+
+        calls: list[bool] = []
+
+        async def _grant(config, force_refresh=False):
+            del config
+            calls.append(force_refresh)
+            if force_refresh:
+                raise BrokerUnavailable("broker unavailable")
+            return AccessGrant("stale-token", "identity-shared", 9_999_999_999)
+
+        class _RejectedBrokerClient:
+            def __init__(self, **kwargs):
+                assert "client_id" not in kwargs
+                assert "client_secret" not in kwargs
+                self._token = kwargs.get("access_token")
+
+            async def list_secrets(self, workspace, environment, secret_path="/"):
+                del workspace, environment, secret_path
+                raise AuthenticationError("stale")
+
+            async def close(self):
+                pass
+
+        monkeypatch.setattr("copilot_cli.config.broker_auth.acquire_access_grant", _grant)
+        monkeypatch.setattr(
+            "copilot_cli.services.infisical.core.api_client.InfisicalClient",
+            _RejectedBrokerClient,
+        )
+        layer = _layer(
+            tmp_path,
+            "INFISICAL_BASE_URL=https://secrets.example.test\n"
+            "INFISICAL_WORKSPACE_ID=ws-123\n"
+            "INFISICAL_ENVIRONMENT=prod\n"
+            "INFISICAL_SECRET_PATH=/shared\n"
+            "INFISICAL_BROKER_URL=https://access.example.test\n"
+            "INFISICAL_BROKER_ISSUER=https://access.example.test\n"
+            "INFISICAL_BROKER_AUDIENCE=https://secrets.example.test\n"
+            "INFISICAL_BROKER_ORG=Example-Org\n"
+            "INFISICAL_STORE_SCOPE=shared\n",
+        )
+
+        with pytest.raises(StoreUnavailable, match="refresh was unavailable"):
+            resolve_from_store("K", [layer])
+        assert calls == [False, True]
+
     def test_resolves_named_secret(self, tmp_path, monkeypatch):
         _install_fake(
             monkeypatch,

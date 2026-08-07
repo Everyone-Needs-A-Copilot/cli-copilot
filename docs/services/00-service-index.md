@@ -26,6 +26,6 @@ worked-example adapters (see their entries below, and the README's
 | 09 | `copilot monitoring` | System commands | Module-level | Alert thresholds |
 | 10 | `copilot skill` | Skill Runtime (local filesystem + subprocess) | Class-based | `SKILL_PATHS` (optional) |
 | 11 | `copilot uspto` | USPTO ODP + TSDR APIs | Class-based | `USPTO_CLI_BASE_URL`, `USPTO_CLI_API_KEY` |
-| 12 | `copilot infisical` | Infisical API (Universal Auth) | Class-based | `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` |
+| 12 | `copilot infisical` | Infisical API (GitHub broker or Universal Auth) | Class-based | Broker config or `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` |
 
 Detailed documentation for each service: see `01-git.md` through `20-uspto.md` in this directory (filenames predate this index's own numbering and don't track it 1:1 — pre-existing, out of this cut's scope).

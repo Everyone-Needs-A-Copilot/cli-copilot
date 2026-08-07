@@ -75,6 +75,23 @@ class TestCredsMissing:
 
 
 class TestReady:
+    def test_complete_broker_config_needs_no_universal_auth_pair(self, tmp_path, monkeypatch):
+        _fake_keychain(monkeypatch, {})
+        layer = _layer(
+            tmp_path,
+            "INFISICAL_WORKSPACE_ID=ws-123\n"
+            "INFISICAL_BROKER_URL=https://access.example.test\n"
+            "INFISICAL_BROKER_ISSUER=https://access.example.test\n"
+            "INFISICAL_BROKER_AUDIENCE=https://secrets.example.test\n"
+            "INFISICAL_BROKER_ORG=Example-Org\n"
+            "INFISICAL_STORE_SCOPE=shared\n",
+        )
+
+        result = check_store_readiness([layer])
+
+        assert result.status == "ready"
+        assert "live access is checked when used" in result.detail
+
     def test_workspace_and_keychain_creds_present(self, tmp_path, monkeypatch):
         _fake_keychain(
             monkeypatch,
