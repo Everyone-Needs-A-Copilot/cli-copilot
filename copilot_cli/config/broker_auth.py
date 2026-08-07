@@ -30,6 +30,8 @@ from copilot_cli.services.infisical.core.api_client import _decode_jwt_payload
 _NAMESPACE = "copilot-control-tower"
 _TIMEOUT = 8.0
 _SKEW_SECONDS = 60
+_BROKER_PROOF_LIFETIME_SECONDS = 60
+_CLOCK_SKEW_TOLERANCE_SECONDS = 5
 
 
 class BrokerUnavailable(RuntimeError):
@@ -326,7 +328,8 @@ async def acquire_access_grant(
                 not isinstance(nonce_id, str)
                 or not isinstance(nonce, str)
                 or expires_at <= time.time()
-                or expires_at - time.time() > 60
+                or expires_at - time.time()
+                > _BROKER_PROOF_LIFETIME_SECONDS + _CLOCK_SKEW_TOLERANCE_SECONDS
             ):
                 raise BrokerUnavailable("the access service returned an invalid challenge")
             signature = _sign(
@@ -376,7 +379,8 @@ async def acquire_access_grant(
                 or not isinstance(assertion, str)
                 or not assertion
                 or assertion_exp <= time.time()
-                or assertion_exp - time.time() > 60
+                or assertion_exp - time.time()
+                > _BROKER_PROOF_LIFETIME_SECONDS + _CLOCK_SKEW_TOLERANCE_SECONDS
             ):
                 raise BrokerUnavailable("the access service returned an invalid scope assertion")
 
