@@ -1,0 +1,181 @@
+{
+  "components": [
+    {
+      "component": "claude",
+      "files": [
+        {
+          "checksum": "sha256:898486b8862d791c6f9001b50e7367de4592a42db8b590cae19bdd6898ac85d8",
+          "ownership": "framework",
+          "path": ".claude/commands/protocol.md"
+        },
+        {
+          "checksum": "sha256:773978787113ddf6b20de18cfd263d8a1373610afd9dc145c2b761da4b6220ee",
+          "ownership": "framework",
+          "path": ".claude/commands/continue.md"
+        },
+        {
+          "checksum": "sha256:3a7bb8800002ccbca12d8ec51f282f107227c6032556f1f7446e6a00fea98c2b",
+          "ownership": "framework",
+          "path": ".claude/commands/pause.md"
+        },
+        {
+          "checksum": "sha256:4445b0de5192d7208f98f0a9abebb2aff5123197123bd637e3a296de5cfa2f9a",
+          "ownership": "framework",
+          "path": ".claude/commands/map.md"
+        },
+        {
+          "checksum": "sha256:952ff7d6176d9a4eee1951b73d1ca3911b3665f5593ceeb9ac5c84d876146cdc",
+          "ownership": "framework",
+          "path": ".claude/commands/memory.md"
+        },
+        {
+          "checksum": "sha256:371decd75a7ba143930e4703e19956a667f505a9b26a455c364797868c827521",
+          "ownership": "framework",
+          "path": ".claude/commands/extensions.md"
+        },
+        {
+          "checksum": "sha256:d088e64cb3ecf38f7201d55669678aec5781bf04d64f37aadc3416c062f54c61",
+          "ownership": "framework",
+          "path": ".claude/commands/orchestrate.md"
+        },
+        {
+          "checksum": "sha256:69ff22a935d83c9738aeaba0c2b3e01177634d69e09bd3ac30c4def9fbcae087",
+          "ownership": "framework",
+          "path": ".claude/fitness-check.sh"
+        },
+        {
+          "checksum": "sha256:3aae8768680faa7c235bcc6d026add6b0cde3ba6b178b06fd080505bd31a673d",
+          "ownership": "framework",
+          "path": ".claude/hooks/copilot-hook.sh"
+        },
+        {
+          "checksum": "sha256:6d949599b2b8837e6f9f208b2cf1df9ad51fe30b03cffc206b60fafe0d5dcf9b",
+          "ownership": "framework",
+          "path": ".claude/agents/cco.md"
+        },
+        {
+          "checksum": "sha256:ac1117656de9e0f2a55473c524840c74f31e0d510f31db269411d25a777eddbe",
+          "ownership": "framework",
+          "path": ".claude/agents/cpa.md"
+        },
+        {
+          "checksum": "sha256:c09cf5a9a898ba9172edcc7baeac543be0554d02c509a3bba8e66c44b6fac074",
+          "ownership": "framework",
+          "path": ".claude/agents/cs.md"
+        },
+        {
+          "checksum": "sha256:2adf20b971da822a4764510c4c2d8b58681adf0bcf8c6e211631a5c72d71b317",
+          "ownership": "framework",
+          "path": ".claude/agents/cw.md"
+        },
+        {
+          "checksum": "sha256:b493250aa9cd5358d061b833f136e2cc425b4ea0c579edf857ea2db46406bc6a",
+          "ownership": "framework",
+          "path": ".claude/agents/do.md"
+        },
+        {
+          "checksum": "sha256:2098d767a4dc6acfbb6005f6a3371642c6e2607ba580cb622c8fd8fc1463aaa7",
+          "ownership": "framework",
+          "path": ".claude/agents/doc.md"
+        },
+        {
+          "checksum": "sha256:27addd190639e3f0af9978d10cfa1cd256089bf901ac329f6c1f0f31c5cdfaa1",
+          "ownership": "framework",
+          "path": ".claude/agents/ind.md"
+        },
+        {
+          "checksum": "sha256:ad817455c92d9d4e22fb42fe951b503f0415c97672d2024c5135e9027cfbb4c8",
+          "ownership": "framework",
+          "path": ".claude/agents/me.md"
+        },
+        {
+          "checksum": "sha256:23df430a5c733ed171fc89fa4a8ab7d1f9363ab16e4a6593933c80561f67ba2a",
+          "ownership": "framework",
+          "path": ".claude/agents/qa.md"
+        },
+        {
+          "checksum": "sha256:9bcdd5cab2a2e702091b99905983ca9eb6f66c26f25e2811644c4ba74719ec24",
+          "ownership": "framework",
+          "path": ".claude/agents/sd.md"
+        },
+        {
+          "checksum": "sha256:e932278aac6d3e56981aab77aa90d16f18a7ab2d61cfd48829ac0dfd54744976",
+          "ownership": "framework",
+          "path": ".claude/agents/sec.md"
+        },
+        {
+          "checksum": "sha256:ed58011f50d5ab45ed35f7957ac970880bdc077b36bfbe10ffa468e85025b06a",
+          "ownership": "framework",
+          "path": ".claude/agents/ta.md"
+        },
+        {
+          "checksum": "sha256:9f1b1fb6fbc4a60f12cfb24993cfa261286c2452498d5d9fa6107c066af5c2f0",
+          "ownership": "framework",
+          "path": ".claude/agents/uid.md"
+        },
+        {
+          "checksum": "sha256:1bc98cdb9521cc81577a4ff103fe39de98c3f858a25d1d6b25fb73c4eeada404",
+          "ownership": "framework",
+          "path": ".claude/agents/uids.md"
+        },
+        {
+          "checksum": "sha256:fddbd45bb7c5580fca0bc6c37c63bf46ec520e2abcf06a4a7793667a908ebbeb",
+          "ownership": "framework",
+          "path": ".claude/agents/uxd.md"
+        },
+        {
+          "checksum": "sha256:0dae9ce3f68ab645c694dfb6ba74fd50d15a90ea34977d9ffc388b95eb00c339",
+          "ownership": "framework",
+          "path": ".claude/agents/kc.md"
+        }
+      ],
+      "ownership_mode": "full",
+      "release_tag": "v5.13.3",
+      "version": "5.13.3"
+    }
+  ],
+  "mutations": [
+    {
+      "applied_at": "2026-08-11T18:26:37Z",
+      "applied_by": "cc 2.12.7",
+      "component": "claude",
+      "entries": [
+        {
+          "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/copilot-hook.sh\" session-start",
+          "event": "SessionStart",
+          "matcher": "startup|resume|clear|compact",
+          "spec_fingerprint": "sha256:c687c9337b4bbc2cb9c3798572651eb9e42424ae09331753c299551bb386c939"
+        },
+        {
+          "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/copilot-hook.sh\" pretool-check",
+          "event": "PreToolUse",
+          "matcher": "Bash|Read|Edit|Write|Agent",
+          "spec_fingerprint": "sha256:05c9853fdbd38b7854193ec7f99e4b40acb45ff74f6f6cdcb9aa98ec18f7bf2b"
+        },
+        {
+          "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/copilot-hook.sh\" subagent-stop",
+          "event": "SubagentStop",
+          "matcher": "me|qa",
+          "spec_fingerprint": "sha256:6a7fa12f6f4c4d1240f6ffc11b743b081d91fe5e0fd1fae76deb18d166fd55ea"
+        },
+        {
+          "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/copilot-hook.sh\" user-prompt-submit",
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "spec_fingerprint": "sha256:61519132878bd33c06677b08f9430f6bdb9037c8932535d6b831388b950da27d"
+        }
+      ],
+      "id": "mut_55b1fc69",
+      "kind": "settings-hook",
+      "snapshot": {
+        "fingerprint_after": "sha256:2ecef1b66bbf73b70906bbc0383a180111957f68ad32e13163f4463130e02f47",
+        "fingerprint_before": "sha256:ce5ddeb111be91a32c8d2a395d7a1d6a167434e10c86a8f0660f02e7da24a467",
+        "vault_ref": "mut_55b1fc69/c94e17e031ed477f"
+      },
+      "source": "claude-copilot",
+      "target": ".claude/settings.json",
+      "target_existed_before": false
+    }
+  ],
+  "schema_version": "1.0"
+}

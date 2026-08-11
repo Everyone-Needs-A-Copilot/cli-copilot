@@ -41,3 +41,7 @@ uv.lock
 
 # Task Copilot local task/work-product database (personal/local state, never shared)
 .copilot/
+
+# cc memory index (local SQLite cache)
+.claude/memory/memory.db
+.claude/memory/memory.db-*
