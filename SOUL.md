@@ -18,18 +18,18 @@
 
 ## 1. The Job
 
-**When** an agent or developer needs to act on the ecosystem's many external services — infra, databases, Discord, skills, USPTO, CRM — from inside any Copilot project,
+**When** an agent or developer needs to act on broadly reusable external services — infrastructure, databases, skills, and public APIs — from inside any Copilot project,
 **they want to** reach all of them through one consistent command instead of wiring up a bespoke client or MCP server per service per project,
 **so they can** operate the whole ecosystem from a terminal, anywhere, without re-implementing integrations every time.
 
 **The struggling moment:**
-Before this binary, every project that needed Docker, a database, Notion, or a Discord handoff had to stand up its own integration — its own MCP server, its own client code, its own config. Twenty services meant twenty bespoke surfaces, each with a different shape, each to be maintained, each unable to be reused by the next project or scripted by an agent. The friction is *re-wiring the same plumbing over and over*, and the inconsistency that follows: no two services were invoked, configured, or failed the same way.
+Before this binary, every project that needed Docker, a database, or a public API had to stand up its own integration — its own MCP server, its own client code, its own config. Each bespoke surface had a different shape, had to be maintained separately, and could not be reused by the next project or scripted by an agent. The friction is *re-wiring the same plumbing over and over*, and the inconsistency that follows: no two services were invoked, configured, or failed the same way.
 
 **Who this serves:**
 
 | User | What they need |
 |------|---------------|
-| **The agent in a session** (primary) | One scriptable, machine-readable (`--json`) way to operate any service, plus the Discord handoff flow to hand work between sessions |
+| **The agent in a session** (primary) | One scriptable, machine-readable (`--json`) way to operate broadly reusable services |
 | **The developer at a terminal** | A single `copilot <service> <verb>` grammar that's learnable by analogy, with honest errors that say what to fix |
 | **The next Copilot project** | To `pip install` the binary and point `COPILOT_ENV_FILE` at its own `.env` — and have every service work unchanged |
 
@@ -157,7 +157,7 @@ If yes → reject, or redesign until it doesn't.
 
 | Feature | Verdict | Gate | Reasoning |
 |---------|---------|------|-----------|
-| Discord handoff (`handoff` / `notify` / `listen` / `wait`) | **IN** | Façade / Uniform | Fronts Discord as per-call terminal commands for inter-agent handoff; polling is per-invocation, no daemon. |
+| Company-specific chat handoff transport | **OUT** | Boundary / Anti-Pattern (The Snowflake Service) | Provider code, credentials, hooks, and background workers belong in an organization-owned internal application, not this public foundation. |
 | Skill runtime (`run` / `verify` / `audit`) | **IN** | Façade | Runs skill workflows; it is a *runtime*, not an author — skill content lives in `.claude/skills`. |
 | Global `--json` flag | **IN** | Uniform | Makes every service machine-readable for agents; directly serves the one-grammar promise. |
 | USPTO Playwright session capture | **IN** *(borderline)* | Façade | Heavy dependency, but still client-only and per-invocation — fronts an external source, owns nothing. |
