@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 from pydantic_settings.sources import DotEnvSettingsSource
 
 from copilot_cli.config.layers import CliLayer, load_tier_overlay, resolve_cli_layer_chain
-from copilot_cli.config.secrets_ladder import resolve_secret
+from copilot_cli.config.secrets_ladder import SecretResolutionError, resolve_secret
 
 
 def _find_env_file() -> Path:
@@ -57,6 +60,93 @@ def _find_env_file() -> Path:
     return Path(".env")
 
 
+# Field name through which `SecretRefSource` hands its per-secret resolution
+# thunks to the model instance. A settings source can only ever communicate
+# with the model it feeds by returning values, so the deferral plan travels the
+# same channel every other setting does -- see `DeferredSecretsMixin`.
+DEFERRED_SECRETS_FIELD = "deferred_secrets_"
+
+
+class DeferredSecretsMixin(BaseSettings):
+    """Makes a declared `requires_secret` field resolve through the credential
+    ladder on FIRST READ rather than at `Settings()` construction.
+
+    Why this exists: the `Settings` models are flat -- one model carries every
+    service's fields -- so an eager `SecretRefSource` resolved EVERY declared
+    secret in the whole tier chain the moment ANY command built its settings.
+    One unresolvable name (a service the invoked command never touches) then
+    fail-closed the entire CLI, and on a TTY it even prompted for a rung-4
+    secure paste of a credential nobody asked for. The union of every service's
+    credentials was never the right fail-closed unit; the credential the caller
+    actually *uses* is.
+
+    So the guarantee moves, it does not weaken. `SecretRefSource` still
+    declares exactly the same set of names, still routes each through
+    `resolve_secret` with the same per-name `from:` hint, and a total ladder
+    miss still raises `SecretResolutionError` -- never an `""` default handed
+    to an HTTP header (`secrets_ladder.py`, red-team §6.3, "no silent no-op").
+    It now raises at `settings.<field>`, the point of use the contract is
+    actually about, instead of at model construction.
+
+    Precedence is unchanged. `SecretRefSource` sits LAST (lowest precedence),
+    so a value supplied by ANY source ahead of it -- `init`, the process
+    environment, a tier's `TierConfigSource`, a tier's `.env` -- wins over the
+    ladder. Deferred resolution reads that off `__pydantic_fields_set__`: a
+    field some other source populated is already in it, and its thunk is
+    dropped unrun. A field only the ladder can supply is not, so the first read
+    walks the ladder.
+
+    Outcomes are memoised per instance: a hit is written into the field (later
+    reads are ordinary attribute reads), and a miss keeps its
+    `SecretResolutionError` so a second read re-raises the SAME error rather
+    than re-walking the ladder -- which would re-prompt rung 4.
+    """
+
+    # Populated only by `SecretRefSource`; `exclude=True` keeps the plumbing out
+    # of `model_dump()` and `repr=False` out of `repr()`. Values are either a
+    # zero-arg resolver thunk or the `SecretResolutionError` it raised.
+    deferred_secrets_: dict[str, Any] = Field(default_factory=dict, exclude=True, repr=False)
+
+    def __getattribute__(self, name: str) -> Any:
+        # Hot path: no deferred plan (every non-layered `Settings`) or an
+        # ordinary field -- one dict lookup, then normal attribute access.
+        pending = object.__getattribute__(self, "__dict__").get(DEFERRED_SECRETS_FIELD)
+        if pending and name in pending:
+            object.__getattribute__(self, "_resolve_deferred_secret")(name)
+        return object.__getattribute__(self, name)
+
+    def _resolve_deferred_secret(self, name: str) -> None:
+        """Settle one deferred secret, then leave `pending` without it.
+
+        Uses `object.__getattribute__` throughout: every name touched here is
+        model plumbing that can never itself be a deferred secret, and going
+        direct keeps `__getattribute__` from re-entering.
+        """
+        state = object.__getattribute__(self, "__dict__")
+        fields_set = object.__getattribute__(self, "__pydantic_fields_set__")
+        pending = state[DEFERRED_SECRETS_FIELD]
+        entry = pending[name]
+
+        if isinstance(entry, SecretResolutionError):
+            raise entry  # memoised miss: same error, no second ladder walk
+
+        if name in fields_set:
+            # A higher-precedence source already supplied this field, so the
+            # ladder never had a say -- exactly as when resolution was eager
+            # and its value was overwritten by the merge.
+            del pending[name]
+            return
+
+        try:
+            value = entry()
+        except SecretResolutionError as exc:
+            pending[name] = exc
+            raise
+        del pending[name]
+        state[name] = value
+        fields_set.add(name)
+
+
 class SecretRefSource(PydanticBaseSettingsSource):
     """Resolves declared `requires_secret: <NAME>` refs via the credential
     ladder (`secrets_ladder.resolve_secret`) -- the single place a secret
@@ -74,7 +164,17 @@ class SecretRefSource(PydanticBaseSettingsSource):
     Fail-closed by construction: a declared secret that misses every ladder
     rung raises `SecretResolutionError` (via `resolve_secret`) instead of
     silently leaving the field at its `""` default -- see
-    `secrets_ladder.py` and red-team §6.3 ("no silent no-op").
+    `secrets_ladder.py` and red-team §6.3 ("no silent no-op"). That raise now
+    lands on FIRST READ of the field rather than at model construction: this
+    source emits a resolver thunk per declared name into
+    `DeferredSecretsMixin`, which settles it the first time the field is
+    accessed. The set of names, the routing hints, the ladder walked, and the
+    terminal `SecretResolutionError` are all unchanged -- only the moment of
+    the raise moved, from "any command builds settings" to "this command uses
+    this credential". The models are flat (one model, every service's fields),
+    so an eager raise here meant one unresolvable secret signed the whole CLI
+    out of every unrelated command. See `DeferredSecretsMixin` for the
+    precedence and memoisation rules.
 
     A declared secret may also carry a per-name routing hint (`cli.overlay.
     yml`'s mapping-form `requires_secret: [{name, from}]`, parsed by
@@ -87,6 +187,15 @@ class SecretRefSource(PydanticBaseSettingsSource):
 
     def __init__(self, settings_cls: type[BaseSettings], chain: list[CliLayer]):
         super().__init__(settings_cls)
+        # Refuse a model that cannot receive the deferral plan. Without the
+        # mixin's field, `extra="ignore"` would drop it and every declared
+        # secret would silently never resolve -- the exact silent no-op this
+        # source exists to prevent, so it is a wiring error, not a fallback.
+        if DEFERRED_SECRETS_FIELD not in settings_cls.model_fields:
+            raise TypeError(
+                f"{settings_cls.__name__} must inherit "
+                f"{DeferredSecretsMixin.__name__} to use {type(self).__name__}."
+            )
         self._chain = chain
         self._secret_names, self._secret_hints = self._collect_secret_names(chain)
 
@@ -105,20 +214,37 @@ class SecretRefSource(PydanticBaseSettingsSource):
         return names, hints
 
     def get_field_value(self, field, field_name: str) -> tuple[object, str, bool]:
+        """Walk the ladder for ONE field, now -- the eager resolution `__call__`
+        used to do inline, and still the whole of what a thunk performs."""
         env_name = field_name.upper()
         if env_name not in self._secret_names:
             return None, field_name, False
         prefer = self._secret_hints.get(env_name)
         return resolve_secret(env_name, self._chain, prefer=prefer), field_name, False
 
+    def _thunk(self, field, field_name: str) -> Callable[[], object]:
+        """A zero-arg resolver for one declared name, closing over everything
+        `DeferredSecretsMixin` would otherwise need to know about the ladder."""
+
+        def resolve() -> object:
+            value, _key, is_complex = self.get_field_value(field, field_name)
+            return self.prepare_field_value(field_name, field, value, is_complex)
+
+        return resolve
+
     def __call__(self) -> dict[str, object]:
-        result: dict[str, object] = {}
+        """Emit the deferral plan, not the secrets.
+
+        Nothing here touches the credential ladder, so building a `Settings`
+        costs no keychain call, no store round-trip, and no rung-4 prompt for
+        a service the invoked command never uses.
+        """
+        deferred: dict[str, object] = {}
         for field_name, field in self.settings_cls.model_fields.items():
-            value, key, is_complex = self.get_field_value(field, field_name)
-            if value is None:
+            if field_name.upper() not in self._secret_names:
                 continue
-            result[key] = self.prepare_field_value(field_name, field, value, is_complex)
-        return result
+            deferred[field_name] = self._thunk(field, field_name)
+        return {DEFERRED_SECRETS_FIELD: deferred} if deferred else {}
 
 
 class TierConfigSource(PydanticBaseSettingsSource):
@@ -190,7 +316,7 @@ class TierConfigSource(PydanticBaseSettingsSource):
         return result
 
 
-class Settings(BaseSettings):
+class Settings(DeferredSecretsMixin):
     model_config = SettingsConfigDict(
         env_file=str(_find_env_file()),
         env_file_encoding="utf-8",

@@ -118,7 +118,16 @@ override:
   resolves to a real value, via the credential ladder
   (`config/secrets_ladder.py`) — fail-closed: a declared secret that misses
   every ladder rung raises `SecretResolutionError`, never silently leaves
-  the field at its `""` default.
+  the field at its `""` default. That raise lands on **first read of the
+  field**, not at `Settings()` construction (`DeferredSecretsMixin`, same
+  module). The models are flat — one model carries every service's fields —
+  so resolving eagerly meant ANY command walked the ladder for EVERY
+  declared name in the chain, and a single unprovisioned credential
+  signed the whole CLI out of commands that never touch that service. The
+  fail-closed unit is the credential a command **uses**, not the union of
+  every service's. Precedence is unaffected: `SecretRefSource` is still
+  lowest, so a value from any source ahead of it wins and the ladder is
+  never walked for that field.
 
   Non-secret **store** config (`infisical_workspace_id` / `_environment` /
   `_secret_path`) is not a `Settings` field, so it doesn't flow through
