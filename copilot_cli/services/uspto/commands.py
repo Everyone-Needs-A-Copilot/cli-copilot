@@ -11,10 +11,10 @@ import typer
 from copilot_cli.shared.errors import CopilotError
 from copilot_cli.shared.output import (
     print_error,
-    print_health,
     print_json,
     print_success,
     print_table,
+    report_health,
 )
 
 app = typer.Typer(
@@ -73,12 +73,15 @@ def _parse_json_option(value: str | None, option_name: str) -> Any:
 
 @app.command()
 def health() -> None:
-    """Check USPTO configuration and API-key connectivity."""
-    result = _client().health()
-    healthy = result.get("healthy", False)
-    print_health("uspto", healthy, result if not healthy else None)
-    if not healthy:
-        raise typer.Exit(1)
+    """Check USPTO configuration and API-key connectivity.
+
+    Delegated to `report_health` (see `copilot_cli.shared.output`): building the
+    client reads `USPTO_CLI_API_KEY`, so a signed-out credential raised upstream
+    of `USPTOClient.health()`'s own guard and escaped as a raw traceback. The
+    wrapper guards construction AND probe, so this command reports the failure it
+    cannot recover from instead of crashing.
+    """
+    report_health("uspto", lambda: _client().health())
 
 
 @app.command()

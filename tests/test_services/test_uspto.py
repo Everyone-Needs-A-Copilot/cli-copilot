@@ -252,3 +252,55 @@ def test_uspto_help_registered():
     assert "sessions" in result.output
     assert "products" in result.output
     assert "tsdr" in result.output
+
+
+def test_uspto_health_reports_a_verdict_when_the_credential_is_unresolvable():
+    """`uspto health` must REPORT a signed-out credential, not crash.
+
+    `USPTOClient.health()` already downgrades a failed probe to an unhealthy
+    verdict, but BUILDING the client reads `USPTO_CLI_API_KEY` -- which is where
+    a signed-out credential raises, upstream of that guard. This command carried
+    the same missing `except CopilotError` as brevo/insights/nocodb/research;
+    it now shares their `report_health` wrapper.
+    """
+    from copilot_cli.config.secrets_ladder import SecretResolutionError
+
+    def signed_out():
+        raise SecretResolutionError("USPTO_CLI_API_KEY")
+
+    with patch("copilot_cli.services.uspto.commands._client", signed_out):
+        result = runner.invoke(app, ["uspto", "health"])
+
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "unhealthy" in result.output
+    assert "USPTO_CLI_API_KEY" in result.output
+
+
+def test_uspto_health_exits_zero_and_keeps_its_probe_detail():
+    class _Healthy:
+        def health(self):
+            return {"healthy": True, "odp_base_url": "https://api.uspto.gov/api/v1"}
+
+    with patch("copilot_cli.services.uspto.commands._client", _Healthy):
+        result = runner.invoke(app, ["uspto", "health"])
+
+    assert result.exit_code == 0
+    assert "healthy" in result.output
+
+
+def test_uspto_health_exits_one_and_shows_the_client_findings_when_unhealthy():
+    class _Unhealthy:
+        def health(self):
+            return {
+                "healthy": False,
+                "error": "Permission denied",
+                "odp_base_url": "https://api.uspto.gov/api/v1",
+            }
+
+    with patch("copilot_cli.services.uspto.commands._client", _Unhealthy):
+        result = runner.invoke(app, ["uspto", "health"])
+
+    assert result.exit_code == 1
+    assert "unhealthy" in result.output
+    assert "odp_base_url" in result.output

@@ -34,10 +34,11 @@ def _client():
 @app.command()
 def health() -> None:
     """Check insights service health."""
-    from copilot_cli.shared.output import print_health
-    result = _client().health()
-    healthy = result.get("healthy", False)
-    print_health("insights", healthy, result if not healthy else None)
+    from copilot_cli.shared.output import report_health
+    # `report_health` guards CONSTRUCTION as well as the probe -- a signed-out
+    # credential raises while the client is being built, upstream of
+    # `health()`'s own guard. Pass the whole expression, never a bound method.
+    report_health("insights", lambda: _client().health())
 
 
 @dashboard_app.command("summary")
@@ -122,11 +123,9 @@ app = typer.Typer(no_args_is_help=True)
 @app.command()
 def health() -> None:
     """Check monitoring service health."""
-    from copilot_cli.shared.output import print_health
+    from copilot_cli.shared.output import report_health
     from .client import health as _health
-    result = _health()
-    healthy = result.get("healthy", False)
-    print_health("monitoring", healthy, result if not healthy else None)
+    report_health("monitoring", _health)
 
 
 @app.command()

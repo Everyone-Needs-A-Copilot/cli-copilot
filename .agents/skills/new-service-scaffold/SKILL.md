@@ -70,10 +70,11 @@ def _client():
 @app.command()
 def health() -> None:
     """Check <name> service health."""
-    from copilot_cli.shared.output import print_health
-    result = _client().health()
-    healthy = result.get("healthy", False)
-    print_health("<name>", healthy, result if not healthy else None)
+    from copilot_cli.shared.output import report_health
+    # `report_health` guards CONSTRUCTION as well as the probe -- a signed-out
+    # credential raises while the client is being built, upstream of
+    # `health()`'s own guard. Pass the whole expression, never a bound method.
+    report_health("<name>", lambda: _client().health())
 
 
 @app.command()
@@ -98,15 +99,16 @@ app = typer.Typer(no_args_is_help=True)
 @app.command()
 def health() -> None:
     """Check <name> service health."""
-    from copilot_cli.shared.output import print_health
+    from copilot_cli.shared.output import report_health
     from .client import health as _health
-    result = _health()
-    healthy = result.get("healthy", False)
-    print_health("<name>", healthy, result if not healthy else None)
+    report_health("<name>", _health)
 ```
 
 **Key conventions:**
-- Every service MUST have a `health()` command
+- Every service MUST have a `health()` command, and it MUST go through
+  `report_health` -- a health command reports a failure it cannot recover from,
+  it never crashes. Hand-rolling the try/except is how four services ended up
+  tracebacking on a missing credential.
 - Use `from copilot_cli.shared.output import print_table, print_json, print_success, print_error` for output
 - Use `from copilot_cli.shared.errors import CopilotError, ConfigError, AuthError, ...` for errors
 - Lazy imports inside functions to avoid circular dependencies

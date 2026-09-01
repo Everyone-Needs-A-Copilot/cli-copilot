@@ -183,6 +183,45 @@ class TestHealthCommandOutputsAllGroups:
 
         assert services == EXPECTED_SERVICES
 
+    def test_json_health_still_enumerates_every_service_when_some_are_unhealthy(self, runner):
+        """One bad service must not truncate the sweep.
+
+        The per-service `health` commands delegate to `report_health`, which
+        raises `typer.Exit(1)` on an unhealthy verdict. The top-level `health`
+        deliberately does NOT use that wrapper: it keeps its own broader guard
+        so it can REPORT each service and carry on, and still exits 0 because
+        its job is to enumerate, not to gate. This pins that difference.
+        """
+
+        def _raise():
+            raise RuntimeError("signed out")
+
+        stub_checks = []
+        for index, name in enumerate(sorted(EXPECTED_SERVICES)):
+            if index % 3 == 0:
+                stub_checks.append((name, _raise))
+            elif index % 3 == 1:
+                stub_checks.append((name, lambda: {"healthy": False, "error": "probe failed"}))
+            else:
+                stub_checks.append((name, lambda: {"healthy": True}))
+
+        try:
+            with patch(
+                "copilot_cli.main._collect_health_checks",
+                return_value=(stub_checks, []),
+            ):
+                result = runner.invoke(app, ["--json", "health"])
+        finally:
+            set_json_mode(False)
+
+        assert result.exit_code == 0
+        reported = {
+            json.loads(ln)["service"]
+            for ln in result.output.strip().splitlines()
+            if ln.strip().startswith("{")
+        }
+        assert reported == EXPECTED_SERVICES
+
     def test_json_health_reports_infisical_auth_failure_as_unhealthy(self, runner):
         """A raised exception from a check is caught and printed as unhealthy."""
 
