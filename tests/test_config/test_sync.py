@@ -289,13 +289,16 @@ class TestPull:
 
         assert advanced.action == "pulled"
         assert (second.root / "README.md").read_text() == "second snapshot\n"
-        assert subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=second.root,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip() == second_commit
+        assert (
+            subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=second.root,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            == second_commit
+        )
         assert not (second.root / ".git" / "MERGE_HEAD").exists()
 
 
