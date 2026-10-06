@@ -125,7 +125,7 @@ def set_secret(
     """Create or update a secret value."""
     state, run_async, handle_error = _get_deps()
     try:
-        client = state.get_client()
+        client = state.get_write_client()
         project_id = _require_project(state, project)
 
         # Try update first; fall back to create if not found
@@ -167,7 +167,7 @@ def delete_secret(
     """Delete a secret."""
     state, run_async, handle_error = _get_deps()
     try:
-        client = state.get_client()
+        client = state.get_write_client()
         project_id = _require_project(state, project)
 
         if not force:

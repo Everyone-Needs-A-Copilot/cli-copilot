@@ -8,7 +8,14 @@ from typing import Annotated
 import typer
 
 from copilot_cli.services.infisical.core.api_client import InfisicalClient
-from copilot_cli.services.infisical.core.config import broker_config, load_settings
+from copilot_cli.services.infisical.core.config import (
+    ADMIN_CLIENT_ID_KEY,
+    ADMIN_CLIENT_SECRET_KEY,
+    _keychain_lookup,
+    broker_config,
+    load_settings,
+)
+from copilot_cli.services.infisical.core.exceptions import ConfigError
 from copilot_cli.services.infisical.output.console import console, err_console
 
 # ─── Global state ─────────────────────────────────────────────────────────────
@@ -23,6 +30,7 @@ class State:
         self.org_id: str = ""
         self.default_project: str = ""
         self._client: InfisicalClient | None = None
+        self._write_client: InfisicalClient | None = None
 
     def get_client(self) -> InfisicalClient:
         """Build (and cache) an API client from current settings."""
@@ -67,6 +75,63 @@ class State:
             client_secret=settings.client_secret,
         )
         return self._client
+
+    def get_write_client(self) -> InfisicalClient:
+        """Return a client that may write (create/update/delete).
+
+        Precedence: explicit ``INFISICAL_CLIENT_ID``/``_SECRET`` (env, ``.env``,
+        or keychain) always win. Otherwise a broker session is read-only, so the
+        ecosystem-admin Universal Auth pair is read through the read client from
+        the configured Infisical location (see ``INFISICAL_ADMIN_*`` settings)
+        and used to log in. Raises ``ConfigError`` with a fix hint when the pair
+        is missing. Credential values are never printed or logged.
+        """
+        if self._write_client is not None:
+            return self._write_client
+
+        settings = load_settings()
+        client_id = settings.client_id or _keychain_lookup("INFISICAL_CLIENT_ID")
+        client_secret = settings.client_secret or _keychain_lookup("INFISICAL_CLIENT_SECRET")
+        if client_id and client_secret:
+            self._write_client = InfisicalClient(
+                base_url=settings.base_url, client_id=client_id, client_secret=client_secret
+            )
+            return self._write_client
+
+        broker_url = getattr(settings, "broker_url", "")
+        if not (isinstance(broker_url, str) and broker_url.strip()):
+            # Non-broker sessions are already Universal Auth and writable.
+            return self.get_client()
+
+        reader = self.get_client()
+        location = (settings.admin_project, settings.admin_env, settings.admin_path)
+        values: dict[str, str] = {}
+        for key in (ADMIN_CLIENT_ID_KEY, ADMIN_CLIENT_SECRET_KEY):
+            try:
+                secret = run_async(reader.get_secret(*location[:2], key, location[2]))
+            except Exception as exc:
+                raise ConfigError(
+                    f"Writes need the ecosystem-admin credentials, but {key} could not be "
+                    f"read from project {location[0]} env {location[1]} path {location[2]}: {exc}",
+                    hint="Check INFISICAL_ADMIN_PROJECT/_ENV/_PATH, or set "
+                    "INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET explicitly.",
+                ) from exc
+            value = secret.get("secretValue", "") if isinstance(secret, dict) else ""
+            if not value:
+                raise ConfigError(
+                    f"Writes need the ecosystem-admin credentials, but {key} is empty or "
+                    f"missing at project {location[0]} env {location[1]} path {location[2]}.",
+                    hint="Store the ecosystem-admin Universal Auth pair there, or set "
+                    "INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET explicitly.",
+                )
+            values[key] = value
+
+        self._write_client = InfisicalClient(
+            base_url=settings.base_url,
+            client_id=values[ADMIN_CLIENT_ID_KEY],
+            client_secret=values[ADMIN_CLIENT_SECRET_KEY],
+        )
+        return self._write_client
 
     def is_json(self) -> bool:
         """Return True when output format is JSON or YAML."""

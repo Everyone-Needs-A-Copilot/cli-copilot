@@ -27,7 +27,7 @@ def disable_signup(
         from copilot_cli.services.infisical.output.console import console
 
         # Show current state first
-        client = state.get_client()
+        client = state.get_write_client()
         config = run_async(client.get_admin_config())
         current = config.get("allowSignUp", None)
         console.print(f"[label]Current allowSignUp:[/label] {current}")

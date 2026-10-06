@@ -35,6 +35,10 @@ from pydantic_settings import BaseSettings
 from copilot_cli.services.infisical.core.exceptions import ConfigError
 
 _DEFAULT_BASE_URL = "https://app.infisical.com"
+# copilot-ecosystem project; holds the write-capable ecosystem-admin identity.
+_DEFAULT_ADMIN_PROJECT = "458e8f7a-3d53-4e72-9d1c-718956463e2f"
+ADMIN_CLIENT_ID_KEY = "INFISICAL_ECOSYSTEM_ADMIN_CLIENT_ID"
+ADMIN_CLIENT_SECRET_KEY = "INFISICAL_ECOSYSTEM_ADMIN_KEY"
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +60,12 @@ class InfisicalSettings(BaseSettings):
     store_scope: str = "shared"
     ssh_public_key: str = ""
     auth_root: str = ""
+    # Where broker sessions look up the ecosystem-admin Universal Auth pair used
+    # for writes (the broker session itself is read-only). Locations only; the
+    # credential values live in Infisical, never here.
+    admin_project: str = _DEFAULT_ADMIN_PROJECT
+    admin_env: str = "prod"
+    admin_path: str = "/shared"
 
     model_config = {"env_prefix": "INFISICAL_", "extra": "ignore"}
 
@@ -170,6 +180,9 @@ def load_settings() -> InfisicalSettings:
         "store_scope": "infisical_store_scope",
         "ssh_public_key": "infisical_ssh_public_key",
         "auth_root": "infisical_auth_root",
+        "admin_project": "infisical_admin_project",
+        "admin_env": "infisical_admin_env",
+        "admin_path": "infisical_admin_path",
     }
     updates: dict[str, str] = {}
     for field, tier_key in tier_fields.items():

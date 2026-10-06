@@ -476,7 +476,7 @@ class TestValidateConnection:
 
 @pytest.fixture
 def mock_state(monkeypatch):
-    """Patch the infisical CLI singleton state's get_client() and reset
+    """Patch the infisical CLI singleton state's get_client()/get_write_client() and reset
     mutable fields afterward so tests don't bleed state into each other."""
     from copilot_cli.services.infisical.main import state as infisical_state
 
@@ -487,6 +487,7 @@ def mock_state(monkeypatch):
     )
     mock_client = MagicMock()
     monkeypatch.setattr(infisical_state, "get_client", lambda: mock_client)
+    monkeypatch.setattr(infisical_state, "get_write_client", lambda: mock_client)
     yield infisical_state, mock_client
     infisical_state.output_format, infisical_state.org_id, infisical_state.default_project = (
         original
