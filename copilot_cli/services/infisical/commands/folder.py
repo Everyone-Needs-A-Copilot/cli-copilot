@@ -78,7 +78,7 @@ def create_folder(
     """Create a folder in a project environment."""
     state, run_async, handle_error = _get_deps()
     try:
-        client = state.get_client()
+        client = state.get_write_client()
         project_id = project or state.default_project
         if not project_id:
             from copilot_cli.services.infisical.output.console import err_console

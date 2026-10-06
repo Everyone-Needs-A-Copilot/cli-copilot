@@ -107,7 +107,7 @@ def create_project(
     """Create a new project."""
     state, run_async, handle_error = _get_deps()
     try:
-        client = state.get_client()
+        client = state.get_write_client()
         org_id = run_async(client.get_org_id(state.org_id))
         if not org_id:
             from copilot_cli.services.infisical.output.console import err_console
@@ -143,7 +143,7 @@ def delete_project(
     """Delete a project."""
     state, run_async, handle_error = _get_deps()
     try:
-        client = state.get_client()
+        client = state.get_write_client()
         if not force:
             project = run_async(client.get_project(project_id))
             name = project.get("name", project_id)
