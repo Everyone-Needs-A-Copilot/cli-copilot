@@ -15,7 +15,7 @@ The public, credential-free foundation of the `copilot` command: a standalone Py
 - Adding a service follows `.claude/rules/adding-a-service.md`. The skill runtime (`copilot skill`) is described in `.claude/rules/skill-runtime.md`.
 - Commands: `make install` (`pip install -e ".[dev]"`), `make test` (`pytest -q`), `make lint` (`ruff check .`), `make format`, `make check` (lint, format check, tests), `copilot --help`, `copilot health`. Live connectivity checks are opt-in: `make e2e-health-pytest` (sets `COPILOT_E2E_LIVE=1`).
 - Testing: every service has a dedicated test file in `tests/test_services/`. All external dependencies are mocked via the autouse `mock_settings` fixture in `tests/conftest.py`; no test makes real API calls or database connections.
-- These project rules also live in `AGENTS.md` for Codex. Change both files together.
+- Keep shared project requirements consistent between CLAUDE.md and AGENTS.md; preserve their scope and keep tool-specific instructions in the appropriate entrypoint.
 
 ## Claude Copilot
 
