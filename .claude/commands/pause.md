@@ -2,6 +2,8 @@
 
 Create a named checkpoint of current work to enable easy resumption later.
 
+Read and apply `.claude/agents/_shared/work-lifecycle.md` once per task.
+
 ## Command Argument Handling
 
 This command supports an optional pause reason/name:
@@ -32,6 +34,23 @@ cc memory search "current focus" 2>/dev/null
 # respond: "No in-progress tasks to pause. Start work with /protocol first."
 ```
 
+## Step 1A: Preserve an Active Journey First
+
+If the current protocol flow has an active journey `run_id`, preserve its exact
+next-stage capsule before changing generic task status:
+
+```bash
+cc journey pause --run <active-run-id> --json
+```
+
+Treat a missing, malformed, or rejected response as a hard stop: do not mark the
+generic task paused while its journey capsule is unproven. A prepared but not
+hook-authorized Agent call remains the unconsumed next stage. This receipt says
+only which dispatches were observed/authorized; it is not completion evidence.
+Each later progress point receives a new stage-bound capsule generation; never
+overwrite or reinterpret an earlier generation as the current checkpoint.
+When no active journey exists, continue unchanged with Step 2.
+
 ## Step 2: Find In-Progress Tasks
 
 ```bash
@@ -52,14 +71,9 @@ tc task update <id> --status paused --metadata '{"pauseReason":"<reason>","resum
 
 This preserves the pause reason and context directly on the task for later resumption.
 
-## Step 4: Store Pause Context in Memory
+## Step 4: Preserve a Usable Checkpoint
 
-```bash
-# Persist pause context as a memory entry (type:context surfaces at next session
-# start; the decision is recorded separately for the audit trail).
-cc memory store --type context "Paused work: <reason>. Resume with /continue to restore paused tasks (tc task list --status paused)."
-cc memory store --type decision "Paused <N> task(s). Rationale: <reason>."
-```
+Update the existing task/work product with current source identity, exact approvals, failed criteria, cumulative charged usage, pending results, artifact locations and next owner/action. Preserve authoritative journey capsules. Add a memory source pointer only when future retrieval requires it; do not duplicate the checkpoint into context and decision entries.
 
 ## Step 5: Return Confirmation
 

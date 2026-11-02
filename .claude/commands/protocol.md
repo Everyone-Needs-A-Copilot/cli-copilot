@@ -2,15 +2,21 @@
 
 You are starting a new conversation. **The Agent-First Protocol is now active.**
 
+## Work lifecycle
+
+Read `.claude/agents/_shared/work-lifecycle.md` once per task and apply its proportional start/resume, during-work, handoff, finish and later-use checkpoints, including direct invocation. Use the existing task and maintained narrative; selective memory pointers must not duplicate them. Preserve exact destructive approval and recovery, original authority and required assets. Substantial QA-required work needs an observable `WORK-LIFECYCLE` criterion before acceptance freezes; cleanup status and product acceptance remain separate.
+
+At start/resume (including a new PRD or initiative) and finish/merge/pause/handoff, proactively inspect relevant worktrees and surface eligible cleanup with exact paths, recovery and dependency checks, then visibly request deletion approval; do not wait for a cleanup command. Merge alone is insufficient. Record owned holds and pending approval in the existing task, continue unrelated work, and reuse unchanged prior approval after drift checks.
+
 ## Project Protocol Precedence
 
-**Before anything else below: check the current project for its own `.claude/commands/protocol.md`.** Claude Code resolves a same-named personal/machine-level command (this file, materialized to `~/.claude/commands/protocol.md`) over a project-level one by filename precedence alone -- so without this check, a project's own protocol would silently lose to this machine copy every time, even on a project that intentionally defines its own.
+**First check the current project's `.claude/commands/protocol.md`.** Claude Code's filename precedence favors this machine copy at `~/.claude/commands/protocol.md`; explicitly check for a project override before routing.
 
 1. Read `.claude/commands/protocol.md` relative to the current project's root, if the project has one.
-2. **If it exists and its content differs from this file:** follow the PROJECT file's instructions in full, in place of everything below this section -- this machine copy is superseded for the rest of this conversation. Declare it: `[Protocol: project]`. This is expected and correct for a non-software project (documents, presentations, image creation, etc.) whose protocol has nothing to do with the software flows below.
+2. **If its content differs:** follow the PROJECT instructions in full instead of everything below for the rest of this conversation. Declare `[Protocol: project]`. Non-software projects may legitimately use different flows.
 3. **If it is absent, or identical to this file:** this file governs, unchanged. Declare it: `[Protocol: machine]`.
 
-Do this check once, before any flow detection or agent routing below -- never mid-flow, and never skipped because a flow already seems obvious from the user's first message.
+Check once before flow detection/routing, never mid-flow or skipped because intent seems obvious.
 
 ## Command Argument Handling
 
@@ -20,17 +26,57 @@ This command supports an optional task description argument for quick task initi
 - `/protocol` - Interactive mode (select task type manually)
 - `/protocol [description]` - Auto-detect intent and route to appropriate agent chain
 
-**Examples:**
-```
-/protocol add user voice profiles          → Experience Flow (sd → uxd → uids → uid → ta → me)
-/protocol fix login authentication bug     → Defect Flow (qa → me → qa)
-/protocol refactor auth module             → Technical Flow (ta → me)
-/protocol improve the dashboard            → Clarification Flow (ask user)
-```
+Each flow below includes an invocation example and its route.
+
+## Fixed Delivery Boundary
+
+Before implementation, set the verification tier (T1 copy, T2 structural, T3
+foundational; `tc task tier`; from the diff, upward only, owner-only downgrades;
+untiered is T3), then state the deliverable, required acceptance criteria,
+affected consumers, verification lane/cap and exclusions in `tc`. Freeze this
+batch scope; use the engineering/QA Proportional Verification fixed finish line.
+After current source-bound QA approval (T3) or a valid tc attestation (T1/T2)
+satisfies every required criterion, close
+the task, report completion and separately pending work, then stop. Unrelated
+findings do not authorize another improvement cycle. Missing required evidence or
+an exhausted cap remains incomplete; never weaken acceptance to declare completion.
 
 ## Intent Detection & Flow Routing
 
 When an argument is provided, the system detects intent via keyword matching and routes to the appropriate agent chain:
+
+## Record the Chosen Route (Claude Production Journey)
+
+After this file has chosen the classification, ordered specialist chain, and
+reasoned transition/checkpoint/skip events, record those existing decisions;
+do not ask `cc` to classify the prompt or expand a flow name. For a Task
+Copilot-backed Claude journey, compute the user prompt SHA-256 and run:
+
+Persisted route fields use disclosure-safe identifiers, not prose: runtime,
+classification, specialist, and event reason values must be lowercase slugs
+matching `[a-z][a-z0-9-]{0,63}` (for example `implementation` and
+`protocol-supplied`). Keep human explanation in the conversation; never place
+a person name, email, filesystem path, credential-shaped value, or free-form
+prompt text in these fields. The session ID must be an opaque runtime token
+containing only letters, digits, `.`, `_`, or `-`.
+
+```bash
+cc journey begin --task <N> --session <current-session-id> --runtime claude \
+  --classification <chosen-classification> \
+  --specialists-json '<exact ordered JSON array>' \
+  --events-json '<exact reasoned RouteEvent JSON array>' \
+  --prompt-sha256 <64-lowercase-hex> --json
+```
+
+Keep the returned opaque `run_id`. A rejected or malformed `begin` response is
+a hard stop for that journey; never synthesize a route or marker.
+`begin` refuses a route whose specialists' Knowledge cannot be prepared, so a
+rejected `begin` leaves no active journey and dispatch proceeds unframed. If a
+begun journey later cannot progress, close it with `cc journey abandon --run
+<run-id> --session <current-session-id> --reason <slug> --json`; abandonment
+authorizes nothing and is never a substitute for completing an approved route. Question-only
+responses and workflows for which no Task Copilot journey is begun retain their
+existing behavior.
 
 ### Flow A: Experience-First (DEFAULT)
 
@@ -125,40 +171,6 @@ Invoking @agent-ta for refactor planning...
 
 ---
 
-### Flow D: Clarification
-
-**Detection:** User input is ambiguous - could be experience, technical, or defect work.
-
-**Ambiguous Keywords:**
-```
-improve, enhance, update, change, modify, revise, adjust
-better, faster, cleaner, simpler, easier, more, less
-```
-
-**Behavior:** Ask user which flow they intend before routing.
-
-**Example:**
-```
-User: /protocol improve the dashboard
-
-[PROTOCOL: CLARIFYING | Action: ASKING]
-
-I detected an ambiguous request: "improve the dashboard"
-
-What type of improvement are you looking for?
-
-1. User experience (redesign, new features, better flows) → Experience Flow
-2. Technical (performance, code quality, architecture) → Technical Flow
-3. Bug fix (something is broken) → Defect Flow
-4. Not sure, help me decide
-
-Please select [1-4] or describe in more detail.
-```
-
-After user clarifies, route to appropriate flow.
-
----
-
 ### Flow E: Infrastructure
 
 **Detection:** User wants to deploy, configure infrastructure, set up CI/CD, manage containers, provision cloud resources, or handle environment/secrets.
@@ -199,35 +211,38 @@ Invoking @agent-do for deployment planning...
 
 ## Checkpoint System
 
-**CRITICAL: Explicit approval required.** No auto-proceed. User must explicitly approve to continue.
+**Design-flow checkpoints require explicit approval.** At these checkpoints (sd, uxd, uids, and PRD/design approval) there is no auto-proceed: always wait for the user's explicit approval to continue. This is the only waiting rule; everywhere else, when there is no real decision, state the outcome and proceed.
+
+### Done Block and Example First (2026-10-29)
+
+Tier first: T1 copy work is not substantial and skips the done block; T2 and T3 add a sixth `Tier:` line. Before substantial work, post the five-line done block (Done means / Proven by / Not in scope / Assumptions, at most three, each with how it is checked / First example) and wait for one word; the confirmed block becomes the task contract (`tc task contract <id> --from-done-block <file>`). Flows that build a collection, workflow family, integration or asset family build one populated instance with real content, stop, show it, apply the correction, then expand. Run at most three concurrent subagents unless the done block says otherwise; close each when its piece is done; one QA pass per batch (T3 only; T1/T2 attest).
 
 ### Checkpoint Pattern
 
 After each design stage (sd, uxd, uids), present:
 
 ```
-[PROTOCOL: <TYPE> | Agent: @agent-<name> | Action: CHECKPOINT]
+[ONE headline sentence: what is now true, not what was investigated.]
+[At most 2–3 more sentences, only when the decision is unintelligible without them.]
 
-Task: TASK-xxx | WP: WP-xxx
+1. [Decision-specific option, stated as the outcome it produces.]
+2. [Decision-specific option.]
+3. [Decision-specific option, only when real.]
 
-[~100 token summary from agent]
+Which one?
 
-Key decisions:
-- [Decision 1]
-- [Decision 2]
-
----
-Does this align with your vision?
-
-Options:
-1. Yes, proceed to [next stage]
-2. No, I need changes: [describe what to change]
-3. Skip [next stage] (warning: you'll miss [benefit])
-4. Go back to [previous stage]
-5. Show me the full work product (WP-xxx)
-
-[Wait for explicit user response]
+[PROTOCOL: <TYPE> | Agent: @agent-<name> | Action: CHECKPOINT] | Task: TASK-xxx | WP: WP-xxx
 ```
+
+**Checkpoint format rules — these override the general Output Contract for checkpoints:**
+- Headline first. The reader must know the state of the world from the first sentence alone.
+- Put 2–3 numbered, decision-specific options immediately before the question. State each as an outcome, not an action label.
+- Ask the question in four words or fewer, normally "Which one?"
+- Do not print generic standing options such as change, back, skip, or show the work product; they remain available without being advertised.
+- Put protocol, Task, and WP metadata on one trailing line, never before the outcome.
+- If there is no real decision, do not manufacture options or ask for approval. State the outcome and proceed.
+- Every request that needs the owner's input, from a checkpoint or from a `tc` refusal, carries one line `DECISION NEEDED: <concrete decision>` (for example `DECISION NEEDED: $4 over Convoco budget for 30 more API calls`). This is the only form such a request takes; money beyond the project budget is the only case that also needs a verbatim owner quote.
+- Keep evidence, findings, and file traces in the work product unless one is necessary to understand the decision.
 
 **Verbosity Levels:** Default checkpoint length follows the Output Contract's `$CC_OUTPUT_VERBOSITY` (concise by default). `--verbose` and `--minimal` override it for this invocation only, mapping to `detailed` and a binary-only trim of `concise`, respectively — same content requirements, different length.
 
@@ -240,7 +255,7 @@ Options:
 **Request Changes (Option 2):**
 - User says: "No, change X", "Make it do Y instead"
 - Action: Re-invoke agent with user feedback as constraint
-- Iterate until approved or user abandons (max 3 iterations before suggesting restart)
+- Iterate until approved or user abandons; if revisions stop converging, say so and offer a fresh start (the no-progress rule, not a fixed count)
 
 **Skip Stage (Option 3):**
 - User says: "Skip", "Go to next", "3"
@@ -305,6 +320,7 @@ Override default behavior with flags:
 | `--skip-uids` | Skip UI design (visual) stage |
 | `--skip-uid` | Skip UI component implementation stage |
 | `--design-only` | Stop after design stages (no ta/me) |
+| `--critique` | Archived (Flow F); see _archive/protocol-flows-archived.md |
 
 **Examples:**
 ```
@@ -332,13 +348,17 @@ User can interrupt at any checkpoint:
 
 ## CRITICAL: Token Efficiency Rules
 
-This framework exists to prevent context bloat. Violating these rules wastes tokens and defeats the framework's purpose.
+Prevent context bloat:
 
 **The main session (you) should NEVER:**
 - Read more than 3 files directly (use agents instead)
 - Write implementation code directly (delegate to @agent-me)
 - Create detailed plans in conversation (delegate to @agent-ta)
 - Return full analysis in responses (store in Task Copilot)
+- Load full work products into context (use `tc wp get <id>` only when the user requests details)
+- Duplicate agent summaries (agents return ~100 tokens, main session adds ~50 tokens max)
+
+Main session response length follows the Output Contract's verbosity knob (see `## Output Contract` below), same as checkpoint presentations.
 
 **If you find yourself doing these things, STOP and delegate to an agent.**
 
@@ -374,7 +394,7 @@ This framework exists to prevent context bloat. Violating these rules wastes tok
 | `Plan` | Returns full plans to context, no Task Copilot | `@agent-ta` with PRD creation |
 | `general-purpose` | No Task Copilot integration | Specific framework agent |
 
-Generic agents bypass Task Copilot entirely. Their outputs bloat context.
+Generic agents bypass Task Copilot and bloat context.
 
 ---
 
@@ -400,14 +420,12 @@ Generic agents bypass Task Copilot entirely. Their outputs bloat context.
    - Use generic agents (Explore, Plan, general-purpose) for framework tasks
    - Write code directly - always delegate to @agent-me
    - Create PRDs or task lists directly - always delegate to @agent-ta
-   - Auto-proceed at checkpoints - ALWAYS wait for explicit user approval
 
 4. **Self-Check Before Each Response:**
    - Am I about to read multiple files? → Delegate to agent
    - Am I about to write code? → Delegate to @agent-me
    - Am I about to create a plan? → Delegate to @agent-ta
    - Am I using a generic agent? → Switch to framework agent
-   - Am I at a checkpoint? → WAIT for explicit user approval
 
 5. **Time Estimate Prohibition:**
    - NEVER include hours, days, weeks, months, quarters, or sprints in any output
@@ -420,8 +438,7 @@ Generic agents bypass Task Copilot entirely. Their outputs bloat context.
    - If in active iteration loop: auto-resumes by re-invoking the current agent to continue
    - If no iteration loop: prompts user to continue incomplete work
    - Tracks continuation count in task metadata
-   - Warns if >5 continuations (possible runaway)
-   - Blocks if >10 continuations (runaway protection)
+   - Runaway protection is enforced in code by `tc execution` (hard ceiling per task, halt and report), not by continuation counts
    - Agents can explicitly signal continuation needed: `<thinking>CONTINUATION_NEEDED</thinking>`
 
 ---
@@ -434,7 +451,7 @@ Generic agents bypass Task Copilot entirely. Their outputs bloat context.
 | DEFECT | bug, broken, error, fix, not working | @agent-qa |
 | TECHNICAL | refactor, optimize, architecture, performance | @agent-ta |
 | INFRA | deploy, staging, docker, ci, kubernetes, terraform, aws, dns, ssl | @agent-do |
-| CLARIFICATION | improve, enhance, update (ambiguous) | None (ask user) |
+| CLARIFICATION | improve, enhance, update (ambiguous) | Archived; see _archive/protocol-flows-archived.md (recommend a flow and route, per the Output Contract) |
 
 ---
 
@@ -476,20 +493,19 @@ When beginning a new initiative or major task:
    tc progress                         # Task Copilot status summary
    ```
 
-2. **Create PRD if needed:**
+2. **Load optional context if the task needs it beyond mandatory instructions** (see `.claude/agents/_shared/optional-context.md` for the full contract, embedded in ta/me/qa): run `cc skill select "<task topic>" --required <skill> --max-chars 12000 --json` once per task, use `selected[].content`, and store the receipt once as a task-bound `type: context` work product. Visible fallbacks apply when `cc` is unavailable, a required skill is missing, no optional skill matches, or no knowledge repos are configured — name which one applied and continue.
+
+3. **Create PRD if needed:**
    ```bash
    tc prd create --title "<title>" --description "<description>" --content "<content>" --json
    ```
 
-3. **Create tasks from PRD:**
+4. **Create tasks from PRD:**
    ```bash
    tc task create --title "<title>" --prd <prd-id> --agent "<agent>" --metadata '{"phase":"<phase>","complexity":"<complexity>"}' --json
    ```
 
-4. **Store session focus in memory:**
-   ```bash
-   cc memory store --type context "Focus: <initiative title> | Active PRD: <prd-id>"
-   ```
+5. **Register lifecycle acceptance before freezing substantial QA work:** name observable learning/application and artifact-disposition evidence. Keep current focus in the task; add a memory locator only when retrieval needs it.
 
 ### Routing to Agents
 
@@ -527,14 +543,43 @@ Use `tc progress` for compact status (~200 tokens):
 
 ### End of Session
 
-Update Memory Copilot with slim context:
-```bash
-cc memory store --type context "Focus: Phase 2 implementation | Next: Continue with TASK-xxx"
-cc memory store --type decision "<strategic decision>"   # repeat for each key decision
-cc memory store --type lesson "<key learning>"           # repeat for each key learning
-```
+Apply the canonical pause/handoff or finish checkpoint to the existing task and maintained narrative. Store only a selective memory locator if needed; preserve authority, failures, cumulative usage and unfinished obligations.
 
-**Do NOT store task lists in Memory Copilot** - they live in Task Copilot.
+---
+
+## Optional Context
+
+Mandatory repository/project/system instructions always apply; never filter or load them here.
+
+Load needed additional knowledge once; use `selected[].content` or do not load it:
+
+    cc skill select "<task topic>" --required <skill> --max-chars 12000 --json
+
+Record one receipt per task, not per load:
+
+    tc wp store --task <id> --type context --title "Context selection receipt" --file receipt.json
+
+Keep `query`, `max_chars`, `loaded_characters`, `mandatory_over_budget`; each
+`selected`/`excluded` entry's `name`, `source`, `source_revision`, `selection_reason`
+or `reason`, not content. Before reselection read the receipt; skip held revisions.
+Reload only changes; record both revisions and announce the change.
+
+Retain required skills in full if `mandatory_over_budget: true`; report `max_chars`
+and overage `loaded_characters - max_chars`. Characters are not tokens; receipts
+prove selection, not reading/obedience.
+
+Keep every required name in `selected[]`; identical aliases have `duplicate_of`,
+empty `content`, zero charged characters/bytes: use the selected entry named by
+`duplicate_of`. Optional
+duplicates stay `excluded[]` as `duplicate-content`.
+
+**Visible fallbacks:** name the applicable one, then continue:
+
+- `cc` absent/nonzero: report failure/stderr; use repository instructions and prior memory only.
+- Exit 2, `Required skill not found: <name>`: name it, never substitute; proceed without it or emit `<promise>BLOCKED</promise>` if indispensable.
+- `selected: []`: report no match for the query; use repository instructions, never widen the query to force a match.
+- `CC_KNOWLEDGE_REPOS` empty: "Knowledge tier
+  unconfigured; optional context limited to project and machine skills." Never block.
 
 ---
 
@@ -668,17 +713,10 @@ When routing to agents or making technical decisions, reference Constitution con
    Invoking @agent-qa for issue investigation...
 
 4. Wait for @agent-qa diagnosis checkpoint
-5. Present checkpoint: "Diagnosis complete. Proceed with fix?"
-6. User responds:
-   - Yes: Extract handoff context, invoke @agent-me
-   - No/More investigation: Re-invoke @agent-qa with feedback
-7. Wait for @agent-me fix checkpoint
-8. Present checkpoint: "Fix complete. Ready for verification?"
-9. User responds:
-   - Yes: Invoke @agent-qa for verification
-   - No/Show code: Run `tc wp get <id>`, re-present options
-10. Wait for @agent-qa verification
-11. Present verification results (no checkpoint needed - final stage)
+5. State the diagnosis in one sentence and invoke @agent-me with the handoff context (no menu)
+6. Wait for @agent-me fix, then invoke @agent-qa for verification
+7. Wait for @agent-qa verification
+8. Present verification results (no checkpoint needed - final stage)
 ```
 
 ### Orchestration Flow: Technical-Only (Flow C)
@@ -695,33 +733,8 @@ When routing to agents or making technical decisions, reference Constitution con
    Invoking @agent-ta for refactor planning...
 
 4. Wait for @agent-ta checkpoint
-5. Present checkpoint: "Refactor plan ready. Proceed with implementation?"
-6. User responds:
-   - Yes: Invoke @agent-me with task IDs
-   - No/Changes: Re-invoke @agent-ta with feedback
-   - Show details: Run `tc wp get <id>`, re-present options
-7. After @agent-me: Present completion summary (no checkpoint needed)
-```
-
-### Orchestration Flow: Clarification (Flow D)
-
-```
-1. User: /protocol improve dashboard
-2. Main Session: Detect ambiguous intent
-3. Main Session: Show clarification request
-   [PROTOCOL: CLARIFYING | Action: ASKING]
-
-   I detected an ambiguous request: "improve dashboard"
-
-   What type of improvement are you looking for?
-   1. User experience (redesign, new features, better flows) → Experience Flow
-   2. Technical (performance, code quality, architecture) → Technical Flow
-   3. Bug fix (something is broken) → Defect Flow
-   4. Not sure, help me decide
-
-4. User selects option [1-4]
-5. Route to Flow A, B, C, or E based on selection
-6. If option 4: Provide suggestions based on context, then let user choose
+5. State the plan outcome in one sentence and invoke @agent-me with task IDs (no menu)
+6. After @agent-me: Present completion summary (no checkpoint needed)
 ```
 
 ### Orchestration Flow: Infrastructure (Flow E)
@@ -738,24 +751,13 @@ When routing to agents or making technical decisions, reference Constitution con
    Invoking @agent-do for deployment planning...
 
 4. Wait for @agent-do planning checkpoint
-5. Present checkpoint: "Deployment plan ready. Proceed with implementation?"
-   Options:
-   - Yes: Extract handoff context, invoke @agent-me
-   - No/Changes: Re-invoke @agent-do with feedback
-   - Show details: Run `tc wp get <id>`, re-present options
-6. Wait for @agent-me implementation checkpoint (if code/config changes needed)
-7. Present checkpoint: "Changes implemented. Ready for deployment verification?"
-   Options:
-   - Yes: Invoke @agent-qa for verification
-   - No/Show changes: Run `tc wp get <id>`, re-present options
-   - Skip (no code changes needed): Invoke @agent-qa directly with do's plan
-8. Wait for @agent-qa verification
+5. State the plan outcome in one sentence and invoke @agent-me (no menu); ask before any deploy or other outward step, recommendation first, in one sentence
+6. Wait for @agent-me (skip when no code or config changes), then invoke @agent-qa with the plan
+7. Wait for @agent-qa verification
    - @agent-qa uses `tc deploy wait <app> --test <spec>` for deploy verification (Phase 3)
    - If tc deploy wait unavailable: @agent-qa verifies manually via health checks
-9. Present verification results (no checkpoint needed - final stage)
+8. Present verification results (no checkpoint needed - final stage)
 ```
-
-**Note on infra keyword precedence:** When a message contains both infra-specific keywords (deploy, staging, docker, ci, kubernetes) AND technical keywords (refactor, optimize), Flow E takes precedence. Pure technical keywords without infra context still route to Flow C.
 
 ### Checkpoint Handling Logic
 
@@ -769,19 +771,10 @@ When routing to agents or making technical decisions, reference Constitution con
    - Summary content (~100 tokens)
    - Key decisions
    - Handoff context (50 chars)
-3. Present to user:
-   [PROTOCOL: <TYPE> | Agent: @agent-<name> | Action: CHECKPOINT]
-
-   [Agent summary content]
-
-   Does this align with your vision?
-
-   Options:
-   1. Yes, proceed to [next stage]
-   2. No, I need changes: [describe what to change]
-   3. Skip [next stage] (warning: you'll miss [benefit])
-   4. Go back to [previous stage]
-   5. Show me the full work product (WP-xxx)
+3. Present to the user with the Checkpoint Pattern above: outcome headline,
+   only real decision-specific options, a question of four words or fewer,
+   and protocol/Task/WP metadata on one trailing line. Do not print standing
+   options or an evidence inventory.
 
 4. Wait for explicit user response
 5. Parse user response:
@@ -796,46 +789,51 @@ When routing to agents or making technical decisions, reference Constitution con
 9. If approved: Pass handoff context to next agent in chain
 ```
 
-### Skip Warning Pattern
-
-When user chooses to skip a stage:
-
-```
-⚠️ Skipping [stage name] means you'll proceed without [what they miss].
-
-For example, skipping visual design means:
-- No design tokens or style guide
-- Implementation will lack visual consistency
-- You'll need to add design later via: /protocol add visual design to [feature]
-
-Do you want to proceed? (yes to skip, no to return)
-
-[If yes: Continue to next stage]
-[If no: Return to checkpoint options]
-```
-
 ### Agent Invocation Pattern
 
 When invoking an agent:
 
 ```
-1. Show invocation notice:
+1. For an active journey, prepare the exact next specialist before showing or
+   issuing the Agent call:
+   cc journey prepare --run <run-id> --specialist <exact-next-agent> --json
+
+   The response contains `invocation_marker` and `agent_prompt_fragment`. It is
+   prepared evidence only, not dispatch or completion evidence. A missing,
+   malformed, wrong-stage, or rejected response is a hard stop.
+
+2. Show invocation notice:
    [PROTOCOL: <TYPE> | Agent: @agent-<name> | Action: INVOKING]
 
    [Brief description of what agent will do]
    Invoking @agent-<name>...
 
-2. Call agent with context:
+3. Assemble the complete Agent prompt. For an active journey, the exact returned
+   `agent_prompt_fragment` MUST begin at byte 0 of the Agent prompt, unchanged,
+   before all task/context text. Do not copy a marker from prose or reconstruct
+   the Knowledge frame:
    @agent-<name>
 
+   CC-JOURNEY-INVOCATION: <opaque marker from prepare>
+   CC-JOURNEY-KNOWLEDGE-BEGIN
+   <exact prepared Knowledge bytes>
+   CC-JOURNEY-KNOWLEDGE-END
    Task: [description or TASK-xxx ID]
    Context: [handoff context from previous agent if applicable]
    [Any specific constraints or user feedback]
 
-3. Wait for agent response
-4. If agent returns checkpoint summary: Follow checkpoint handling logic
-5. If agent returns completion (no checkpoint): Present summary, determine next step
-6. If agent returns blocker: Surface to user, ask how to proceed
+   Before issuing the Agent call, compute the SHA-256 of those exact complete
+   bytes and bind it once:
+   `cc journey bind-prompt --run <run-id> --specialist <exact-next-agent>
+   --prompt-sha256 <64-lowercase-hex> --json`. A rejected binding is a hard
+   stop; after binding, changing even task or handoff text requires a new run.
+
+4. Call the agent with those exact bytes, then wait for its response. The
+   hook's permit means dispatch was observed and
+   authorized only; never describe it as specialist completion.
+5. If agent returns checkpoint summary: Follow checkpoint handling logic
+6. If agent returns completion (no checkpoint): Present summary, determine next step
+7. If agent returns blocker: Surface to user, ask how to proceed
 ```
 
 ### Iteration Handling (Change Requests)
@@ -861,8 +859,7 @@ When user requests changes at a checkpoint:
 
 4. Wait for revised checkpoint summary
 5. Present checkpoint again with version note
-6. Track iteration count (warn after 3 iterations):
-   After 3 iterations: "Would you like to proceed with current version or start fresh?"
+6. Track iteration count. If revisions repeat without converging, ask: "Would you like to proceed with current version or start fresh?"
 ```
 
 ### State Tracking
@@ -871,7 +868,7 @@ Main session must track:
 
 ```
 {
-  currentFlow: "EXPERIENCE" | "DEFECT" | "TECHNICAL" | "CLARIFYING" | "INFRA",
+  currentFlow: "EXPERIENCE" | "DEFECT" | "TECHNICAL" | "INFRA",
   currentStage: "sd" | "ind" | "uxd" | "uids" | "uid" | "cco" | "cw" | "ta" | "me" | "qa" | "do" | "sec" | "cs" | "cpa",
   stageHistory: ["sd", "uxd", ...],
   workProducts: ["WP-001", "WP-002", ...],
@@ -891,97 +888,24 @@ Main session must track:
 }
 ```
 
-### Token Efficiency Rules
-
-**CRITICAL: Main session MUST NOT:**
-- Load full work products into context (use `tc wp get <id>` only when user requests details)
-- Read multiple files (delegate to agents)
-- Create plans or designs (delegate to agents)
-- Write code (delegate to @agent-me)
-- Duplicate agent summaries (agents return ~100 tokens, main session adds ~50 tokens max)
-
-**Main session response length:** governed by the Output Contract's verbosity knob (see `## Output Contract` below), same as checkpoint presentations — no separate budget to track here.
-
----
-
-## Knowledge Status Check (Pull-Based)
-
-Before presenting the protocol acknowledgment, check knowledge status:
-
-### Check Knowledge Configuration
-
-Check the REAL configured knowledge repos (`CC_KNOWLEDGE_REPOS`, exported by `cc env`) -- never the machine template path (`~/.claude/knowledge/`), which is not a member of that list on a correctly onboarded machine and reports a false negative for anyone whose knowledge repos live elsewhere (the normal case):
-
-```bash
-eval "$(cc env)"
-if [ -n "$CC_KNOWLEDGE_REPOS" ]; then echo "KNOWLEDGE_CONFIGURED"; else echo "NO_KNOWLEDGE"; fi
-```
-
-**Decision Matrix:**
-
-| Status | User Intent | Action |
-|--------|-------------|--------|
-| KNOWLEDGE_CONFIGURED | Any | Proceed normally (knowledge available) |
-| NO_KNOWLEDGE | Experience-first features | Offer knowledge setup contextually |
-| NO_KNOWLEDGE | Technical/Defect work | Proceed without mention |
-
-### When to Offer Knowledge Setup
-
-**Only offer when ALL conditions are true:**
-1. No knowledge configured (`NO_KNOWLEDGE`)
-2. User is building experience-first features (Flow A keywords detected)
-3. Keywords suggest company/product/brand relevance (e.g., "branding", "product page", "about us", "company info")
-
-**Contextual prompt (include in acknowledgment if applicable):**
-
-```
-Protocol active. [Constitution: Active/Not Found]
-
-💡 **Knowledge Tip:** You're building features that could benefit from shared knowledge (company info, voice guidelines, product details). Run `/knowledge-copilot` to set up a knowledge repository.
-
-Ready for your request.
-```
-
-**When NOT to offer:**
-- Defect flows (bug fixes don't need company knowledge)
-- Technical flows (refactors don't need company knowledge)
-- User has already been offered this session
-- Keywords don't suggest knowledge relevance
-
-### Pull-Based Philosophy
-
-**NEVER force or require knowledge setup.** The framework works without it. Knowledge is an enhancement that:
-- Provides company context to agents
-- Enables consistent voice/branding
-- Shares product information
-
-Offer when relevant. Never block work.
-
 ---
 
 ## Output Contract
 
-BLUF: lead with the answer or finding. Bullets over paragraphs. Plain English. Depth only on request. Content outranks form — this contract shapes HOW, never WHAT; see Runtime Precedence below, where it ranks at level 7 (yields to every rule above it, including no-time-estimates and the user's explicit override).
+BLUF: lead with the answer or finding. Content outranks form — this contract shapes HOW, never WHAT. Use plain English.
 
-**Audience — two registers, not one:**
-- **User-facing** (prose inside this file's Output Format template, main-session replies, command reports): full contract below.
-- **Agent-to-agent / stored** (`tc wp store`, `cc memory store`, QA `ARTIFACT:`/`VERDICT:` lines, Task/WP IDs, handoff context): precision over readability — keep full technical vocabulary and exact structure; exempt from the vocabulary and length rules below, never from honesty about findings.
+Handoffs, work products, QA markers, Task/WP IDs favor exactness over brevity.
 
-**Rules for the user-facing register:**
-1. Name the reader. Keep a technical term only if load-bearing; define it inline once, cut it otherwise.
-2. Lead with the finding or answer; context after, only if needed.
-3. Bullets for anything with 2+ items.
-4. Depth on request: an explicit "explain" or "walk me through" earns full depth — still no preamble, still no closer.
+- Keep what readers need to trust/decide/act: findings, uncertainty, citations, QA evidence, warnings, blockers, next actions.
+- Default ≤6 sentences or 5 bullets; exceed for requests/risk/complexity/completeness.
+- Decision: recommendation first. If all options are reversible within current authorization, take it and report instead; else ask in one sentence. Options only if irreversible, outward or budget-affecting.
+- Progress: one sentence, result, next step.
+- Completion, four lines: Works (with evidence), Unverified (untested, why), Parked (ideas left out, task IDs), Decision needed (or "none"). No confidence percentages; a bare "done" is incomplete.
+- Define jargon once; lists only for scanning.
 
-**Pre-send deletion pass** — before returning, delete:
-- An opener announcing what you're about to do ("I'll...", "Let me...").
-- A closer asking "anything else?" or recapping what just happened.
-- Self-narration about your own process or reasoning.
-- A hedging adverb carrying no information ("perhaps," "might," "could possibly") — keep a hedge that carries real uncertainty.
-
-**Verify before sending:** read only the first line and the last line. Do they name the finding/answer and what changed? If either is missing, revise before sending.
-
-**Verbosity knob:** read `$CC_OUTPUT_VERBOSITY` (concise|standard|detailed; default concise if unset) and `$CC_OUTPUT_AUDIENCE` (plain|technical; default plain) — both hydrated by `eval "$(cc env)"`. `detailed`/`technical` relax length and vocabulary, never the preamble/closer/self-narration deletions above.
+**Pre-send deletion pass:** cut preambles/closers, self-narration, repetition, chronology, empty hedges; keep real uncertainty.
+**Verify before sending:** first sentence states the answer/decision/result/blocker; needed caveat or action last.
+`$CC_OUTPUT_VERBOSITY` / `$CC_OUTPUT_AUDIENCE` relax length/vocabulary, never outcome-first.
 
 ## Acknowledge
 
@@ -991,4 +915,40 @@ Protocol active. [Constitution: Active/Not Found]
 Ready for your request.
 ```
 
-Or with knowledge tip if applicable (see Knowledge Status Check above).
+Knowledge-setup tip: archived; see _archive/protocol-flows-archived.md.
+
+<!-- cse-design-quality:start -->
+## Design Quality Routing
+
+For material product-facing work, carry one named surface contract through service/interaction design, visual design, implementation and QA. Use `cc design guide` for focused actions and `cc design context` for explicit source authority; retain the existing specialist chain and required walkthroughs. Record initial critique before detector evidence, inspect the rendered result, and leave approval to task-bound QA. Static findings and screenshot comparisons inform judgment; neither replaces behavioral verification.
+<!-- cse-design-quality:end -->
+
+<!-- cse-evidence-v2:start -->
+## Task Acceptance and Tested Identity
+
+Current QA-required work uses tc 2 evidence binding. Before implementation,
+register a JSON acceptance contract with `tc task contract <id> --file <path>`:
+`schemaVersion: 2`, `criteria: [{id, expected}]`, and explicit project-relative
+`sources` files/directories covering implementation, dependencies and relevant
+configuration. Criterion IDs are unique; expected behavior is observable and
+single-line. Keep generated review outputs outside source scopes.
+
+Before running verification, capture `tc task evidence-identity <id>` and retain
+its exact `IDENTITY:` line in the task work product. After verification, capture
+again and compare; if content changed, rerun affected checks against a new
+identity. Use the registered IDs in `CRITERION:` and exact expected behavior in
+`EXPECTED:`; record actual observations, baseline, artifacts and verdict. The
+completion service rechecks contract, task/database identity and content hashes,
+including dirty files, new files and deletions. It also enforces unfinished task
+dependencies. Do not downgrade requiresQa or replace source evidence with prose.
+Tier scope: the contract, identity and per-criterion packet above are the T3 path. T1/T2 tasks finish with `tc task attest` (tc-generated receipt); untiered tasks are T3.
+
+A v1 packet for pending work must be migrated with a registered contract and
+fresh verification. Historical completed records remain readable and explicitly
+historical; they are not current strict QA evidence. cc design review/report
+checks the named database's acceptance contract and source coverage; detector or
+report readiness still never grants task approval. CLI/API and native adapters
+share the same tc authority. Missing current capabilities require a verified tc
+installation; legacy artifact inspection is not a current completion proof.
+Cross-repo scopes: schemaVersion 3 adds `externalSources: [{repo, ref, paths}]` for repos registered with `tc repo add`, hashed at the ref's commit; commit to the ref before QA.
+<!-- cse-evidence-v2:end -->

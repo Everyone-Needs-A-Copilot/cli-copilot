@@ -15,7 +15,7 @@
 #   core/ecosystem/mutations.py's DEFAULT_HOOK_ENTRIES):
 #   bash "$CLAUDE_PROJECT_DIR/.claude/hooks/copilot-hook.sh" <event-name>
 #   <event-name> is one of: session-start | pretool-check | subagent-stop
-#                            | user-prompt-submit
+#                            | user-prompt-submit | pre-compact-handoff
 #   stdin (the harness's JSON payload) is passed through untouched on the
 #   happy path — this script never buffers or reparses it unless the
 #   global install cannot be reached (see below).
@@ -242,5 +242,10 @@ fi
 # ---------------------------------------------------------------------------
 export COPILOT_HOOK_STATE_DIR="${PROJECT_DIR}/.claude/hooks/state"
 mkdir -p "$COPILOT_HOOK_STATE_DIR" 2>/dev/null || true
+# Session state is machine-local. A `*` ignore file keeps it out of the
+# project's git status (and so out of "unstable project" holds) without
+# touching the project's own .gitignore; it ignores itself too.
+[ -e "$COPILOT_HOOK_STATE_DIR/.gitignore" ] \
+  || printf '*\n' > "$COPILOT_HOOK_STATE_DIR/.gitignore" 2>/dev/null || true
 
 exec bash "$TARGET" "$@"
