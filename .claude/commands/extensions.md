@@ -1,235 +1,108 @@
 # Extensions Status
 
-Show the status of the extension system, including knowledge repositories, active extensions, and setup guidance.
+Show the configured Knowledge ladder, reusable skills, and active agent extensions. Do not create or modify files.
 
-## Step 1: Check Knowledge Repository Status
+## 1. Inspect the real Knowledge ladder
 
-Run these commands to discover knowledge repositories:
+The only authoritative inputs are `paths.knowledge_repo` and the ordered `CC_KNOWLEDGE_REPOS` value from `cc env` (personal → department → organization → foundation). Do not inspect `~/.claude/knowledge/knowledge-manifest.json` or `./knowledge-manifest.json` unless that path is actually in the ladder.
 
 ```bash
-# Check for global knowledge repo
-ls ~/.claude/knowledge/knowledge-manifest.json 2>/dev/null && echo "GLOBAL_EXISTS" || echo "GLOBAL_MISSING"
-
-# Check for project knowledge repo
-ls ./knowledge-manifest.json 2>/dev/null && echo "PROJECT_EXISTS" || echo "PROJECT_MISSING"
-
-# Check project cc config for knowledge_repo path
-cc config get paths.knowledge_repo 2>/dev/null || echo "not set"
+eval "$(cc env)"
+echo "${CC_KNOWLEDGE_REPOS:-}"
+echo "${CC_KNOWLEDGE_REPOS:-}" | tr ',' '\n' | while IFS= read -r repo; do
+  [[ -z "$repo" ]] && continue
+  if [[ -f "$repo/knowledge-manifest.json" ]]; then
+    name="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('name','?'))" "$repo/knowledge-manifest.json" 2>/dev/null)"
+    echo "FOUND: $repo (name: $name)"
+  else
+    echo "MISSING: $repo"
+  fi
+done
 ```
 
-If a manifest exists, read its name/description:
-```bash
-cat ~/.claude/knowledge/knowledge-manifest.json 2>/dev/null | head -10
-cat ./knowledge-manifest.json 2>/dev/null | head -10
-```
+Store each tier's position, path, manifest name, and found/missing state. The `tr`/`while` form is portable across bash and zsh.
 
-Store the results.
-
----
-
-## Step 2: List Active Skills and Extensions
+## 2. Resolve skills and extensions
 
 ```bash
-# List all discovered skills
 cc skill list
-
-# Check for local extensions directory
-ls .claude/extensions/ 2>/dev/null && echo "PROJECT_EXTENSIONS_EXIST" || echo "NO_PROJECT_EXTENSIONS"
-ls ~/.claude/knowledge/.claude/extensions/ 2>/dev/null && echo "GLOBAL_EXTENSIONS_EXIST" || echo "NO_GLOBAL_EXTENSIONS"
+cc extensions resolve --all --json
 ```
 
-Store the results.
+Use the returned JSON as source truth. For every agent it supplies `agent`, `action`, `matched`, `type`, `file`, `source_repo`, `description`, `requiredSkills`, `missingSkills`, and `warning`. Resolution is nearest-first: the first tier declaring an agent wins; otherwise the base agent runs unchanged.
 
----
+Interpret `action` without inventing state:
 
-## Step 3: Present Status
+- `apply`: the declared extension is usable; show its type and source tier.
+- `fallback_use_base`: no usable extension was selected; the base agent runs.
+- `fallback_use_base_with_warning`: the base agent runs, and the returned warning must be shown.
+- `fallback_fail`: show the returned warning as a blocking configuration error. Do not claim the agent can run.
+- `no_extension`: no tier declares that agent; this is a healthy base-agent state.
 
-Based on the results, present the extension status.
+`requiredSkills` and `missingSkills` are evidence, not suggestions. When skills are missing, list their exact names beside the affected agent. Do not scan directories or recompute whether a requirement is satisfied; the resolver already applied the same contract used during agent invocation.
 
-### If extensions or skills are configured:
+## 3. Present status
 
-```
-## Knowledge Repositories
+If at least one Knowledge tier is configured, return:
 
-### Global (Machine-Level)
-Location: ~/.claude/knowledge/
-Status: [✓ Configured / ✗ Not found]
-Name: [manifest name]
-Extensions: [count from extensions dir]
-Skills: [count from cc skill list with source: global]
+```text
+## Knowledge Ladder (nearest first)
 
-### Project (This Directory)
-Location: [./knowledge-manifest.json path or "Not configured"]
-Status: [✓ Configured / Using global only]
-Name: [manifest name if configured]
-Extensions: [count if configured]
-
-Resolution Priority: Project > Global > Base agents
+Tier N: [repo path]
+Status: [✓ manifest found (name: ...) / ✗ manifest missing]
 
 ## Active Skills
 
-[Output from `cc skill list`]
+[cc skill list output]
 
 ## Active Extensions
 
-| Agent | Type | Source | Description |
-|-------|------|--------|-------------|
-| @agent-sd | override | global | [description from frontmatter] |
-| @agent-uxd | extension | project (overrides global) | [description] |
-| @agent-ta | (base) | framework | Industry-standard methodologies |
+| Agent | Action | Type | Source Tier | Description |
+|-------|--------|------|-------------|-------------|
+| @agent-<id> | <action> | <type or --> | <source_repo> | <description> |
 
-Note: Only agents listed above have extensions. All other agents use base framework instructions.
-
-## Extension Types
-
-### override
-Completely replaces the base agent with your methodology.
-- Use when: You have a proprietary methodology fundamentally different from base
-- Example: Service Designer using Moments Framework instead of Service Blueprinting
-
-### extension
-Adds to the base agent (section-level merge).
-- Use when: You want base practices plus company-specific additions
-- Example: UX Designer with company design system requirements
-
-### skills
-Injects additional skills into the agent.
-- Use when: You have company-specific tools/patterns to make available
-- Example: Tech Architect with company architecture patterns
-
-## Two-Tier Resolution
-
-The system checks for extensions in priority order:
-1. **Project** repository (if configured) - highest priority
-2. **Global** repository (~/.claude/knowledge) - auto-detected
-3. **Base** framework agents - always available
-
-Set up global once, override per-project only when needed.
-
-## Learn More
-
-See: docs/40-extensions/00-extension-spec.md for complete documentation on:
-- Creating knowledge repositories
-- Extension file formats
-- Fallback behaviors
-- Required skills validation
+[Agents with matched:false use the base framework unchanged. Surface any warning.]
 ```
 
-### If no extensions are configured:
+Include only real `matched:true` rows. Sort them by agent ID; never fabricate examples.
 
-```
+After the table, summarize unmatched agents in two groups: healthy `no_extension`/`fallback_use_base` outcomes, and warnings or failures that need action. Preserve the resolver's wording for failures so the report cannot convert a fail-closed result into an apparently healthy status.
+
+If the ladder is empty, return:
+
+```text
 ## Extension Status
 
-No extensions configured.
-Using base framework agents only.
-
-## Knowledge Repository Status
-
-### Global (Machine-Level)
-Location: ~/.claude/knowledge/
-Status: ✗ Not found
-
-### Project (This Directory)
-Status: Not configured
+No Knowledge tiers configured. Base framework agents remain available.
 
 ## Active Skills
 
-[Output from `cc skill list`, or "No skills found"]
-
-## Why Use Extensions?
-
-Extensions customize Claude Copilot agents for your team:
-- **Override** agents with proprietary methodologies
-- **Extend** agents with company-specific checklists and standards
-- **Inject skills** to provide company-specific tools and patterns
-
-This is Claude Copilot's biggest differentiator - bringing your company's expertise into the AI workflow.
-
-## Extension Types
-
-### override
-Completely replaces the base agent with your methodology.
-Use when: Your methodology is fundamentally different from generic approach.
-
-### extension
-Layers company-specific content on top of the base agent.
-Use when: You want to keep base practices but add company requirements.
-
-### skills
-Adds company-specific skills to an agent without changing behavior.
-Use when: You want to provide access to proprietary tools/patterns.
+[cc skill list output, or "No skills found"]
 
 ## Get Started
 
-### Option 1: Global Knowledge Repository (Recommended)
-Set up once, available in all projects automatically.
-
-Run: /knowledge-copilot
-
-This creates ~/.claude/knowledge/ with:
-- knowledge-manifest.json (required)
-- .claude/extensions/ (your agent extensions)
-- skills/ (company-specific skills)
-- docs/ (company glossary, standards)
-
-### Option 2: Project-Specific Knowledge Repository
-Only needed when this project requires different extensions than global.
-
-1. Create knowledge repository in your project
-2. Set the path in `.claude/cc/config.json`:
-   ```json
-   {
-     "paths": {
-       "knowledge_repo": "/absolute/path/to/knowledge"
-     }
-   }
-   ```
-3. Or run: `cc config set paths.knowledge_repo /path/to/knowledge`
-
-## Two-Tier Resolution
-
-The system checks for extensions in priority order:
-1. Project repository (if configured) - highest priority
-2. Global repository (~/.claude/knowledge) - auto-detected
-3. Base framework agents - always available
-
-Set up global once, override per-project only when needed.
-
-## Learn More
-
-See: docs/40-extensions/00-extension-spec.md
+1. Run /knowledge-copilot to create or link a repository.
+2. Declare its path with `cc config set paths.knowledge_repo <path>`; multiple paths form a nearest-first list.
+3. Add and declare `.claude/extensions/<agent>.override.md` or `.extension.md` in that repository.
+4. Re-run /extensions to verify the resolved result.
 ```
 
----
+## Explain the extension types
 
-## Formatting Guidelines
+- `override`: replace the base agent with a proprietary methodology.
+- `extension`: append company-specific instructions after the base agent, explicitly labeled; never section-merge them.
+- `skills`: add reusable capabilities without changing agent instructions.
 
-- Use checkmarks (✓) and crosses (✗) for status indicators
-- Show "Not configured" instead of error messages for missing repositories
-- Group extensions by agent ID, sorted alphabetically
-- Include helpful next steps if no extensions are active
-- Keep output scannable with clear headers and tables
-- Present information clearly based on actual extension state
+An `override` replaces the base instructions only after successful resolution. An `extension` appends a labeled company section; it does not merge headings or silently win conflicts. A `skills` entry changes availability, not behavior. These distinctions matter when explaining why an agent is using base behavior despite a manifest entry.
 
----
+For format and fallback details, point to `docs/40-extensions/00-extension-spec.md`.
 
-## Error Handling
+## Error handling
 
-**If cc skill list fails:**
-- Check that `cc` CLI is installed: `which cc`
-- Install if missing: `bash ~/.claude/copilot/tools/cc/install.sh`
+- If `cc skill list` fails, check `which cc`; if missing, use `bash ~/.claude/copilot/tools/cc/install.sh`.
+- If a manifest is unreadable, show that tier as unreadable and continue reporting other verified tiers.
+- Missing repositories and `no_extension` are honest states, not fabricated errors.
 
-**If manifest files are unreadable:**
-- Show knowledge repository status (may still work)
-- Display "Unable to read manifest" message
+Never print raw manifest content, tokens, or credential-store values. Paths and manifest names are sufficient for this status command. If a configured tier cannot be read, report that bounded fact; do not fall through and present a farther tier as though it were the configured nearest winner.
 
----
-
-## Important
-
-- DO NOT create documentation or files unless explicitly requested
-- ONLY show status and guidance
-- Present information clearly based on actual extension state
-- Include setup instructions appropriate to current state
-- Distinguish between global (team-wide) and project (local) extensions
-- Emphasize that global knowledge is auto-detected (no config needed)
+Keep the report scannable. Use ✓/✗, show "Not configured" instead of a stack trace, distinguish source tiers, and state that `paths.knowledge_repo` drives automatic ladder discovery.
