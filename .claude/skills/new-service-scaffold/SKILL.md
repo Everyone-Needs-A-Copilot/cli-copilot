@@ -17,16 +17,19 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 
 Scaffold a new service integration for the copilot CLI, following the 7-step process from CLAUDE.md. Produces a complete, working service with client, commands, config, tests, and documentation — matching the existing codebase patterns.
 
+Read the canonical CLI creation contract in `docs/04-cli-standard.md`. Both Claude and Codex use this same source; help and syntax alone are not sufficient.
+
 ## Define Done
 
 A new service scaffold is complete when:
 
 - [ ] Directory created: `copilot_cli/services/<name>/` with `__init__.py`, `client.py`, `commands.py`
 - [ ] `health()` command implemented and returning structured output
-- [ ] Service registered in `main.py` via `app.add_typer()`
+- [ ] Service registered through `_BASE_SERVICES` / the tier overlay loader, per `.claude/rules/adding-a-service.md`
 - [ ] Config fields added to `settings.py`
 - [ ] Tests created in `tests/test_services/test_<name>.py` and passing
-- [ ] Documentation added in `docs/services/XX-<name>.md`
+- [ ] Documentation added in `docs/services/XX-<name>.md`, meeting the CLI understanding standard
+- [ ] Offline root/nested help, intent examples, output and recovery claims verified against implementation
 - [ ] All output uses `shared/output.py` helpers, all errors use `shared/errors.py` hierarchy
 
 ## Prerequisites
@@ -166,14 +169,9 @@ def health() -> dict:
         return {"healthy": False, "error": str(exc)}
 ```
 
-### Step 4: Register in main.py (REQUIRED)
+### Step 4: Register through the service loader (REQUIRED)
 
-Add to `copilot_cli/main.py`:
-
-```python
-from .services.<name>.commands import app as <name>_app
-app.add_typer(<name>_app, name="<name>", help="<Description>")
-```
+Follow `.claude/rules/adding-a-service.md`: foundation services add a `ServiceEntry` to `_BASE_SERVICES` in `copilot_cli/services/_loader.py`; organization and department integrations declare their overlay. `main.py` consumes the resolved registry. Do not add direct `app.add_typer()` registrations to `main.py`.
 
 ### Step 5: Add Config Fields to settings.py (REQUIRED)
 
@@ -223,11 +221,7 @@ All tests mock external dependencies via the `mock_settings` fixture from `conft
 
 ### Step 7: Add Documentation (REQUIRED)
 
-Create `docs/services/XX-<name>.md` with:
-- Service overview
-- Configuration requirements
-- Command reference
-- Examples
+Apply `docs/04-cli-standard.md`. Create `docs/services/XX-<name>.md` with all eight required sections, a complete command reference and an intent → invocation → effects → expected-result table. Link the guide from the service index, README and help. Verify exact examples against registered command metadata; document credential names, output flags in their actual position, exit behavior and one recovery path.
 
 ## Verification
 
@@ -257,8 +251,7 @@ mkdir -p copilot_cli/services/redis/
 # 2. Add config to settings.py
 # redis_url: str = "redis://localhost:6379"
 
-# 3. Register in main.py
-# app.add_typer(redis_app, name="redis", help="Redis cache operations")
+# 3. Register a ServiceEntry in the foundation loader or declare a tier overlay
 
 # 4. Test
 copilot redis health
@@ -272,7 +265,7 @@ pytest tests/test_services/test_redis.py -v
 
 | Error Type | Symptom | Recovery |
 |------------|---------|----------|
-| `ImportError` | Service not registered properly | Check `main.py` imports |
+| `ImportError` | Service not registered properly | Check the loader entry and resolved overlay |
 | `ConfigError` | Settings field missing | Add to `settings.py` |
 | Test failures | Mock not matching | Check `conftest.py` mock_settings fixture |
 
@@ -295,7 +288,7 @@ pytest tests/test_services/test_redis.py -v
 
 ### Registration Test
 - Service is properly registered and accessible via CLI
-- **PASS:** `copilot <name> --help` shows all commands; `copilot health --json` includes the service
+- **PASS:** `copilot <name> --help` shows all commands; `copilot --json health` includes the service
 - **FAIL:** Service exists but `copilot <name>` returns "No such command"
 
 ## Guidelines
