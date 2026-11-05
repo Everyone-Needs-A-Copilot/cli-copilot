@@ -113,3 +113,25 @@ def health() -> None:
     except CopilotError as exc:
         print_error(str(exc), hint=exc.hint)
         raise typer.Exit(1)
+
+
+@app.command(
+    "tests",
+    context_settings={
+        "allow_extra_args": True,
+        "ignore_unknown_options": True,
+        "allow_interspersed_args": False,
+    },
+)
+def tests(ctx: typer.Context) -> None:
+    """Forward managed test-resource commands to the shared framework: cc resources."""
+    import subprocess
+
+    try:
+        code = subprocess.call(["cc", "resources", *ctx.args])
+    except OSError:
+        print_error(
+            "Shared framework cc is unavailable; install it before managing test resources."
+        )
+        raise typer.Exit(1)
+    raise typer.Exit(code)
