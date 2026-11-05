@@ -1,4 +1,4 @@
-.PHONY: install test test-cov lint format format-check check e2e-health e2e-health-pytest clean
+.PHONY: install test test-cov lint format format-check check check-cli-docs e2e-health e2e-health-pytest clean
 
 install:
 	pip install -e ".[dev]"
@@ -18,7 +18,11 @@ format:
 format-check:
 	ruff format --check .
 
-check: lint format-check test
+check-cli-docs:
+	python3 scripts/check-cli-guide.py CLI.md
+	python3 -m unittest discover -s scripts/tests -p 'test_cli_contract.py'
+
+check: check-cli-docs lint format-check test
 
 e2e-health:
 	python3 scripts/e2e_health.py

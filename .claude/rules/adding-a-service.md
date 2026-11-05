@@ -8,6 +8,8 @@ paths:
 
 # Adding a new service
 
+Apply `docs/04-cli-standard.md` before scaffolding: document purpose and intent, complete command discovery, inputs/outputs, effects, verification and recovery. Help must be available offline without credentials.
+
 1. Create `copilot_cli/services/<name>/` with `__init__.py`, `client.py`, and `commands.py`.
 2. In `commands.py`, create a Typer sub-app and add its commands.
 3. In `client.py`, implement the business logic.
@@ -16,3 +18,5 @@ paths:
 6. Add config fields to `copilot_cli/config/settings.py` if needed.
 7. Add tests in `tests/test_services/test_<name>.py`.
 8. Add docs in `docs/services/XX-<name>.md` and list it in `docs/services/00-service-index.md`.
+
+9. Link the guide from root help and README; verify every registered command and example against the parser. Run the CLI guide structural check and focused offline CLI tests.

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .config.store_readiness import StoreReadiness
 
 app = typer.Typer(
+    epilog="Guide: CLI.md in the source repository (purpose, intent, output and recovery).",
     name="copilot",
     help="Unified CLI for infrastructure, APIs, databases, and monitoring.",
     no_args_is_help=True,

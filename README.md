@@ -203,3 +203,5 @@ make e2e-health
 - **Database:** [psycopg2](https://www.psycopg.org/)
 - **Docker:** [Docker SDK for Python](https://docker-py.readthedocs.io/)
 - **Git:** [GitPython](https://gitpython.readthedocs.io/)
+
+CLI discovery, intent, effects and recovery: [CLI guide](CLI.md).

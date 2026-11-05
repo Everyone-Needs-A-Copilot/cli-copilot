@@ -9,6 +9,8 @@ You are guiding an adopter to add their **own** service integration to the `copi
 Run the conversation, let them choose the language, teach the key-storage model, then scaffold.
 You never hardcode a secret and you never push either language on them.
 
+Apply `docs/04-cli-standard.md` for the complete CLI contract and verification gates. Collect the business intent, read/write effects, observable success and recovery alongside the operation names.
+
 ## 1. The right conversation (elicit everything, one question group at a time)
 
 1. **Service name & purpose** — short `kebab-case` id + one line on what it does.
@@ -60,8 +62,12 @@ You never hardcode a secret and you never push either language on them.
 ## 4. Scaffold
 
 - **Python:** invoke the `new-service-scaffold` skill with the collected spec — it generates the
-  service dir, client, commands, config fields, tests, docs, and registers it in `main.py`.
+  service dir, client, commands, config fields, tests, docs, and registers it through the service loader / tier overlay.
 - **Go:** generate the subprocess-contract stub + a `docs/services/<name>.md` describing the
   stdin/stdout JSON contract; do not register it as a Python plugin.
 - Either way: generate a `.env.example` block using the `requires_secret: <NAME>` pattern above —
   **no generated file ever contains a literal secret.** Then tell them how to run it and verify.
+
+## 5. Acceptance
+
+Deliver the eight-section CLI guide and complete command reference, link them from README/help, and check offline discovery and exact examples. A successful health call alone does not establish conformity. Run `python3 scripts/check-cli-guide.py docs/services/<guide>.md` and the focused CLI checks.
