@@ -12,6 +12,7 @@ Every function takes an injectable `home` so tests never touch the real one.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -28,6 +29,10 @@ COPILOT_DIRNAME = ".copilot"
 CURRENT_NAME = "current"
 MANIFEST_NAME = "release.json"
 COMPONENT_CLI = "cli-copilot"
+RELEASES_DIRNAME = "releases"
+HISTORY_NAME = "release-history.jsonl"
+HISTORY_LOCK_NAME = "release-history.lock"
+KIND_LIVE = "live-link"  # personal tier / dev-mode links to a live checkout
 # Overlay tiers in ascending precedence; the launcher puts the highest first.
 OVERLAY_TIERS = ("organization", "department-accounting", "personal")
 RELEASE_ID = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-z]{1,40}")
@@ -52,7 +57,12 @@ paths = []
 
 dev = home / "cli-dev.json"
 if dev.is_file():
-    root = json.loads(dev.read_text(encoding="utf-8"))["path"]
+    try:
+        root = json.loads(dev.read_text(encoding="utf-8"))["path"]
+        if not isinstance(root, str) or not root:
+            raise ValueError("path must be a non-empty string")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        sys.exit("copilot: malformed dev marker %s (%r). Fix or remove it." % (dev, exc))
     paths.append(root)
     info.update(mode="dev", commit="dev")
 else:
@@ -246,7 +256,14 @@ def check(home: Path | str | None = None, bin_dir: Path | str | None = None) -> 
         if info["release"] != data["release"]:
             problems.append("launcher release differs from current/release.json")
         real = current.resolve()
-        if real not in Path(info["module"]).parents:
+        module = Path(info["module"])
+        # Live-link components resolve to their checkout by design.
+        allowed = [real] + [
+            Path(os.path.realpath(current / row["path"]))
+            for row in data["components"]
+            if row.get("kind") == KIND_LIVE and row.get("path")
+        ]
+        if not any(root in module.parents for root in allowed):
             problems.append(f"module {info['module']} is outside {real}")
     return {"ok": not problems, "problems": problems, "info": info, "receipt": receipt}
 
@@ -263,13 +280,57 @@ def rollback(home: Path | str | None = None) -> dict[str, Any]:
         }
     current = chome / CURRENT_NAME
     data = read_manifest(current)
-    previous = data.get("previous")
+    previous = _previous_release(chome, data["release"]) or data.get("previous")
     if not previous:
         raise InstallerError(f"release {data['release']} has no previous release")
-    target = chome / "releases" / previous
-    read_manifest(target)
-    tmp = chome / f".{CURRENT_NAME}.rollback"
+    if not RELEASE_ID.fullmatch(previous):
+        raise InstallerError(f"invalid previous release id {previous!r}")
+    read_manifest(chome / RELEASES_DIRNAME / previous)
+    tmp = chome / f".{CURRENT_NAME}.{os.getpid()}.tmp"
     tmp.unlink(missing_ok=True)
-    tmp.symlink_to(target)
+    tmp.symlink_to(Path(RELEASES_DIRNAME) / previous)  # relative, as `cc release` writes it
     os.replace(tmp, current)
+    _append_history(
+        chome,
+        {
+            "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "action": "rollback",
+            "release": previous,
+            "previous": data["release"],
+            "reason": "copilot launcher installer rollback",
+        },
+    )
     return {"action": "repointed", "from": data["release"], "release": previous}
+
+
+def _previous_release(chome: Path, current_id: str) -> str | None:
+    """Most recent earlier release in the history still on disk (cc pointer.previous_release)."""
+    path = chome / HISTORY_NAME
+    if not path.is_file():
+        return None
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            rows.append(json.loads(line))
+        except ValueError:
+            continue
+    for row in reversed(rows):
+        candidate = row.get("release") if isinstance(row, dict) else None
+        if (
+            isinstance(candidate, str)
+            and candidate != current_id
+            and RELEASE_ID.fullmatch(candidate)
+            and (chome / RELEASES_DIRNAME / candidate / MANIFEST_NAME).is_file()
+        ):
+            return candidate
+    return None
+
+
+def _append_history(chome: Path, record: dict[str, Any]) -> None:
+    chome.mkdir(parents=True, exist_ok=True)
+    with open(chome / HISTORY_LOCK_NAME, "a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with open(chome / HISTORY_NAME, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())

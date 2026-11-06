@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -156,3 +158,47 @@ def test_version_prints_release_commit():
         },
     )
     assert "release 20260101T000000Z-aaa commit abc1234" in out.stdout
+
+
+def test_rollback_matches_cc_semantics(env):
+    home, r1, r2 = env
+    hist = home / ".copilot" / "release-history.jsonl"
+    hist.write_text(
+        json.dumps({"action": "flip", "release": r1.name}) + "\n"
+        + json.dumps({"action": "flip", "release": r2.name}) + "\n"
+    )
+    _point(home, r2)
+    li.install(home)
+    li.rollback(home)
+    link = home / ".copilot" / "current"
+    assert os.readlink(link) == f"releases/{r1.name}"
+    last = json.loads(hist.read_text().splitlines()[-1])
+    assert last["action"] == "rollback" and last["release"] == r1.name
+    assert last["previous"] == r2.name
+
+
+def test_check_accepts_live_link_component(env):
+    home, _, r2 = env
+    live = home / "live" / "cli-copilot"
+    shutil.copytree(r2 / "cli-copilot", live)
+    manifest = json.loads((r2 / "release.json").read_text())
+    for row in manifest["components"]:
+        if row["name"] == "cli-copilot":
+            row.update(kind="live-link", path="cli-copilot", signer="")
+    shutil.rmtree(r2 / "cli-copilot")
+    (r2 / "cli-copilot").symlink_to(live)
+    (r2 / "release.json").write_text(json.dumps(manifest))
+    _point(home, r2)
+    li.install(home)
+    assert li.check(home)["ok"], li.check(home)["problems"]
+
+
+def test_malformed_dev_marker_is_clear_error(env):
+    home, _, _ = env
+    li.install(home)
+    (home / ".copilot" / "cli-dev.json").write_text("{not json")
+    proc = _run(home, "--launcher-info")
+    assert proc.returncode != 0 and "malformed dev marker" in proc.stderr
+    assert "Traceback" not in proc.stderr
+    with pytest.raises(li.InstallerError, match="malformed dev marker"):
+        li.check(home)
