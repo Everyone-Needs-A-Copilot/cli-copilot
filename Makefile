@@ -46,4 +46,4 @@ check-launcher:
 	python3 scripts/install-cli.py check $(if $(HOME_DIR),--home $(HOME_DIR)) $(if $(BIN_DIR),--bin-dir $(BIN_DIR))
 
 rollback-launcher:
-	python3 scripts/install-cli.py rollback $(if $(HOME_DIR),--home $(HOME_DIR))
+	python3 scripts/install-cli.py rollback $(if $(HOME_DIR),--home $(HOME_DIR)) $(if $(STEPS),--steps $(STEPS)) $(if $(TO),--to $(TO))

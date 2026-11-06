@@ -25,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bin-dir")
     parser.add_argument("--home")
     parser.add_argument("--python")
+    parser.add_argument("--steps", type=int, default=1)
+    parser.add_argument("--to")
     args = parser.parse_args(argv)
     try:
         if args.command == "install":
@@ -32,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "check":
             result = li.check(args.home, args.bin_dir)
         else:
-            result = li.rollback(args.home)
+            result = li.rollback(args.home, steps=args.steps, to=args.to)
     except li.InstallerError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

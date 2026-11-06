@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -268,8 +269,14 @@ def check(home: Path | str | None = None, bin_dir: Path | str | None = None) -> 
     return {"ok": not problems, "problems": problems, "info": info, "receipt": receipt}
 
 
-def rollback(home: Path | str | None = None) -> dict[str, Any]:
-    """Leave dev mode, or repoint `current` at the release's `previous`."""
+def rollback(
+    home: Path | str | None = None, *, steps: int = 1, to: str | None = None
+) -> dict[str, Any]:
+    """Leave dev mode, or roll `current` back through the release history.
+
+    Delegates to `cc release rollback` (single source of truth) when cc provides
+    it; otherwise uses `_fallback_rollback`, a port of cc's `_lineage` semantics.
+    """
     chome = copilot_home(home)
     marker = chome / DEV_MARKER_NAME
     if marker.is_file():
@@ -278,52 +285,115 @@ def rollback(home: Path | str | None = None) -> dict[str, Any]:
             "action": "dev-mode-disabled",
             "release": read_manifest(chome / CURRENT_NAME)["release"],
         }
+    before = read_manifest(chome / CURRENT_NAME)["release"]
+    delegated = _cc_rollback(home, steps, to)
+    if delegated is None:
+        return _fallback_rollback(chome, before, steps, to)
+    after = read_manifest(chome / CURRENT_NAME)["release"]
+    return {"action": "repointed", "from": before, "release": after, "via": "cc"}
+
+
+def _cc_rollback(home: Path | str | None, steps: int, to: str | None) -> bool | None:
+    """Run `cc release rollback`; None when cc or its release command is unavailable."""
+    cc = shutil.which("cc")
+    if not cc:
+        return None
+    env = {**os.environ, "HOME": str(Path(home) if home is not None else Path.home())}
+    env.pop("COPILOT_HOME", None)
+    probe = subprocess.run(
+        [cc, "release", "rollback", "--help"], capture_output=True, text=True, env=env, check=False
+    )
+    if probe.returncode != 0:
+        return None
+    args = [cc, "release", "rollback"] + (["--to", to] if to else ["--steps", str(steps)])
+    proc = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
+    if proc.returncode != 0:
+        raise InstallerError((proc.stderr or proc.stdout).strip() or "cc release rollback failed")
+    return True
+
+
+def _read_history(chome: Path) -> list[dict[str, Any]]:
+    path = chome / HISTORY_NAME
+    if not path.is_file():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _lineage(rows: list[dict[str, Any]]) -> list[str]:
+    """Release stack replayed from history: flips push, rollbacks pop to target.
+
+    Faithful port of cc.core.release.engine.pointer._lineage.
+    """
+    stack: list[str] = []
+    for row in rows:
+        release = row.get("release")
+        if not release:
+            continue
+        if row.get("action") == "rollback" and release in stack:
+            del stack[len(stack) - stack[::-1].index(release) :]
+        else:
+            stack.append(release)
+    return stack
+
+
+def _earlier_releases(chome: Path, current_id: str) -> list[str]:
+    """Releases before `current` in lineage order, nearest first, still on disk."""
+    stack = _lineage(_read_history(chome))
+    if current_id in stack:
+        stack = stack[: len(stack) - stack[::-1].index(current_id) - 1]
+    out: list[str] = []
+    for candidate in reversed(stack):
+        if (
+            candidate != current_id
+            and candidate not in out
+            and isinstance(candidate, str)
+            and RELEASE_ID.fullmatch(candidate)
+            and (chome / RELEASES_DIRNAME / candidate / MANIFEST_NAME).is_file()
+        ):
+            out.append(candidate)
+    return out
+
+
+def _fallback_rollback(chome: Path, current_id: str, steps: int, to: str | None) -> dict[str, Any]:
+    if to is None:
+        if steps < 1:
+            raise InstallerError("steps must be at least 1")
+        earlier = _earlier_releases(chome, current_id)
+        if steps > len(earlier):
+            raise InstallerError(
+                f"no earlier release: cannot roll back {steps} step(s); "
+                f"{len(earlier)} earlier release(s) available"
+            )
+        to = earlier[steps - 1]
+    if to == current_id:
+        raise InstallerError(f"{to} is already current")
+    if not RELEASE_ID.fullmatch(to):
+        raise InstallerError(f"invalid release id {to!r}")
+    read_manifest(chome / RELEASES_DIRNAME / to)
     current = chome / CURRENT_NAME
-    data = read_manifest(current)
-    previous = _previous_release(chome, data["release"]) or data.get("previous")
-    if not previous:
-        raise InstallerError(f"release {data['release']} has no previous release")
-    if not RELEASE_ID.fullmatch(previous):
-        raise InstallerError(f"invalid previous release id {previous!r}")
-    read_manifest(chome / RELEASES_DIRNAME / previous)
     tmp = chome / f".{CURRENT_NAME}.{os.getpid()}.tmp"
     tmp.unlink(missing_ok=True)
-    tmp.symlink_to(Path(RELEASES_DIRNAME) / previous)  # relative, as `cc release` writes it
+    tmp.symlink_to(Path(RELEASES_DIRNAME) / to)  # relative, as `cc release` writes it
     os.replace(tmp, current)
     _append_history(
         chome,
         {
             "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "action": "rollback",
-            "release": previous,
-            "previous": data["release"],
+            "release": to,
+            "previous": current_id,
             "reason": "copilot launcher installer rollback",
         },
     )
-    return {"action": "repointed", "from": data["release"], "release": previous}
-
-
-def _previous_release(chome: Path, current_id: str) -> str | None:
-    """Most recent earlier release in the history still on disk (cc pointer.previous_release)."""
-    path = chome / HISTORY_NAME
-    if not path.is_file():
-        return None
-    rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        try:
-            rows.append(json.loads(line))
-        except ValueError:
-            continue
-    for row in reversed(rows):
-        candidate = row.get("release") if isinstance(row, dict) else None
-        if (
-            isinstance(candidate, str)
-            and candidate != current_id
-            and RELEASE_ID.fullmatch(candidate)
-            and (chome / RELEASES_DIRNAME / candidate / MANIFEST_NAME).is_file()
-        ):
-            return candidate
-    return None
+    return {"action": "repointed", "from": current_id, "release": to, "via": "fallback"}
 
 
 def _append_history(chome: Path, record: dict[str, Any]) -> None:
