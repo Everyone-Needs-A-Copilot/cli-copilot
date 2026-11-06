@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import TYPE_CHECKING
 
@@ -32,6 +33,10 @@ usage_ledger.install()
 def _version_callback(value: bool) -> None:
     if value:
         console.print(f"copilot-cli {__version__}")
+        release = os.environ.get("COPILOT_RELEASE_ID")
+        if release:
+            commit = os.environ.get("COPILOT_RELEASE_COMMIT") or "unknown"
+            console.print(f"release {release} commit {commit}")
         raise typer.Exit()
 
 
