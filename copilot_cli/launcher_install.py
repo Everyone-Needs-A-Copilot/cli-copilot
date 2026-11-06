@@ -293,17 +293,46 @@ def rollback(
     return {"action": "repointed", "from": before, "release": after, "via": "cc"}
 
 
+ROLLBACK_SIGNATURE = "cc release rollback"
+
+
+def _cc_candidates(home: Path | str | None) -> list[str]:
+    """Framework cc locations, most specific first; PATH is only the last resort."""
+    base = Path(home) if home is not None else Path.home()
+    found = [
+        base / COPILOT_DIRNAME / CURRENT_NAME / "bin" / "cc",
+        default_bin_dir(home) / "cc",
+    ]
+    out = [str(p) for p in found if p.is_file() and os.access(p, os.X_OK)]
+    on_path = shutil.which("cc")
+    if on_path and on_path not in out:
+        out.append(on_path)
+    return out
+
+
+def _is_framework_cc(cc: str, env: dict[str, str]) -> bool:
+    """Positive identity: `--help` must show the framework's rollback usage line.
+
+    A compiler named cc (e.g. /usr/bin/cc) also exits 0 on --help, so the exit
+    code alone proves nothing.
+    """
+    try:
+        probe = subprocess.run(
+            [cc, "release", "rollback", "--help"],
+            capture_output=True, text=True, env=env, check=False, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    out = probe.stdout + probe.stderr
+    return probe.returncode == 0 and ROLLBACK_SIGNATURE in out and "--steps" in out and "--to" in out
+
+
 def _cc_rollback(home: Path | str | None, steps: int, to: str | None) -> bool | None:
-    """Run `cc release rollback`; None when cc or its release command is unavailable."""
-    cc = shutil.which("cc")
-    if not cc:
-        return None
+    """Run `cc release rollback`; None when no verified framework cc is available."""
     env = {**os.environ, "HOME": str(Path(home) if home is not None else Path.home())}
     env.pop("COPILOT_HOME", None)
-    probe = subprocess.run(
-        [cc, "release", "rollback", "--help"], capture_output=True, text=True, env=env, check=False
-    )
-    if probe.returncode != 0:
+    cc = next((c for c in _cc_candidates(home) if _is_framework_cc(c, env)), None)
+    if cc is None:
         return None
     args = [cc, "release", "rollback"] + (["--to", to] if to else ["--steps", str(steps)])
     proc = subprocess.run(args, capture_output=True, text=True, env=env, check=False)

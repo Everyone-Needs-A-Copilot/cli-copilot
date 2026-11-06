@@ -13,6 +13,8 @@ import pytest
 
 from copilot_cli import launcher_install as li
 
+_REAL_CC_ROLLBACK = li._cc_rollback
+
 REPO = Path(__file__).resolve().parents[2]
 
 
@@ -299,3 +301,46 @@ def test_rollback_delegates_to_cc_when_available(tmp_path, monkeypatch):
     monkeypatch.setattr(li, "_cc_rollback", fake)
     out = li.rollback(tmp_path, steps=3)
     assert calls == [(3, None)] and out["release"] == b and out["via"] == "cc"
+
+
+def _stub(path: Path, body: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\n" + body)
+    path.chmod(0o755)
+    return path
+
+
+_CLANG_LIKE = 'echo "OVERVIEW: clang LLVM compiler"; echo "USAGE: cc [options] file..."; exit 0\n'
+_REAL_CC = (
+    'if [ "$1 $2 $3" = "release rollback --help" ]; then '
+    'echo "Usage: cc release rollback [OPTIONS]"; echo "  --steps INTEGER"; echo "  --to TEXT"; exit 0; fi\n'
+    'echo "$@" > "$HOME/cc-called"; exit 0\n'
+)
+
+
+def test_compiler_cc_on_path_is_not_delegated_to(tmp_path, monkeypatch):
+    fake_bin = tmp_path / "pathbin"
+    _stub(fake_bin / "cc", _CLANG_LIKE)
+    monkeypatch.setenv("PATH", f"{fake_bin}:/usr/bin:/bin")
+    assert _REAL_CC_ROLLBACK(tmp_path, 1, None) is None
+
+
+def test_framework_cc_in_home_is_preferred_over_path(tmp_path, monkeypatch):
+    fake_bin = tmp_path / "pathbin"
+    _stub(fake_bin / "cc", _CLANG_LIKE)
+    _stub(tmp_path / ".local" / "bin" / "cc", _REAL_CC)
+    monkeypatch.setenv("PATH", f"{fake_bin}:/usr/bin:/bin")
+    assert _REAL_CC_ROLLBACK(tmp_path, 2, None) is True
+    assert (tmp_path / "cc-called").read_text().split() == ["release", "rollback", "--steps", "2"]
+
+
+def test_rollback_uses_fallback_when_only_compiler_cc(env, monkeypatch):
+    home, r1, r2 = env
+    (home / ".copilot" / "release-history.jsonl").write_text(
+        "".join(json.dumps({"action": "flip", "release": r.name}) + "\n" for r in (r1, r2))
+    )
+    _point(home, r2)
+    _stub(home / "pathbin" / "cc", _CLANG_LIKE)
+    monkeypatch.setenv("PATH", f"{home / 'pathbin'}:/usr/bin:/bin")
+    monkeypatch.setattr(li, "_cc_rollback", _REAL_CC_ROLLBACK)
+    assert li.rollback(home)["release"] == r1.name
