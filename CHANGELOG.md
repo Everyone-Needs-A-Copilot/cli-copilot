@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.15] - 2026-11-07
+
+- Resolve CLI configuration and service overlays from the active central release instead of retired mirror directories. Organization and department commands now use the selected immutable component snapshots, while personal content keeps its recorded live link. Repository/ref, signer policy, component identity and path checks reject conflicting manifests without falling back to stale mirrors. Machines without a central pointer keep legacy mirror resolution. Python package version is 1.4.15.
+
 ## [0.3.14] - 2026-11-07
 
 - Central resolution: add a stable `copilot` launcher installer (`scripts/install-cli.py`, `copilot_cli/launcher_install.py`) that resolves through the `~/.copilot/current` release pointer, with idempotent install and receipt, dev mode, check, and rollback that follows `cc release rollback` lineage (`--steps`, `--to`) after verifying the framework `cc` identity. `--version` shows the release commit.

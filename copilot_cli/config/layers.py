@@ -277,6 +277,13 @@ def resolve_cli_layer_chain(manifest_path: Path | str | None = None) -> list[Cli
     if not cli_entries:
         return None
 
+    from copilot_cli.config.central_release import CentralRelease
+
+    try:
+        central = CentralRelease.current()
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise LayersManifestError(f"{path}: invalid current release: {exc}") from exc
+
     layers: list[CliLayer] = []
     for entry in cli_entries:
         try:
@@ -291,6 +298,10 @@ def resolve_cli_layer_chain(manifest_path: Path | str | None = None) -> list[Cli
             raise LayersManifestError(
                 f"{path}: malformed 'cli' layer entry {entry!r}: {exc}"
             ) from exc
+        try:
+            root = central.layer_root(entry) if central else _mirror_root(layer_id)
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as exc:
+            raise LayersManifestError(f"{path}: invalid central layer {layer_id!r}: {exc}") from exc
         layers.append(
             CliLayer(
                 id=layer_id,
@@ -299,7 +310,7 @@ def resolve_cli_layer_chain(manifest_path: Path | str | None = None) -> list[Cli
                 repo=repo,
                 ref=ref,
                 auth=auth,
-                root=_mirror_root(layer_id),
+                root=root,
                 path=source.get("path"),
                 unit=entry.get("unit"),
                 activation=str(entry.get("activation", "always")),

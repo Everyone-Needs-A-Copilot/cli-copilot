@@ -47,12 +47,20 @@ Resolution (`resolve_cli_layer_chain()` in `config/layers.py`):
    entries — this `None` is the fast-path trigger consumed by both
    `config/settings.py` and `services/_loader.py`.
 
-Each resolved layer's local mirror root is
-`~/.copilot/mirrors/cli/<id>` by convention (namespaced by component so a
-`cli` layer id can never collide with another component's layer sharing
-the same id). Materializing that mirror (`copilot update`'s pull-only
-sync) is **out of Phase-1 scope** — Phase 1 ships the loader and layered
-config inert, not the sync path.
+With a central release, the root comes from `COPILOT_HOME/current/release.json`
+(`~/.copilot` by default): foundation maps to `cli-copilot`, organization to
+`cli/organization`, departments to `cli/department-<unit>`, and personal to
+`cli/personal`. The resolver checks the pointer's release identity, canonical
+component path, tier/kind, repository/ref and declared signer policy. Signed
+components must remain inside that snapshot; personal must be the recorded
+live symlink. `source.path` may name that component or its recorded source
+checkout, but signed content is always read from the snapshot. A malformed or
+conflicting active release fails closed; it never loads a stale mirror.
+
+Without a central pointer, the legacy local root remains
+`~/.copilot/mirrors/cli/<id>`, with the existing mirror-root override and
+nearest-tier rank precedence unchanged. This resolver only reads configuration;
+publication and release switching remain owned by `cc release`.
 
 ### `cli.overlay.yml` — one tier's service declarations
 
