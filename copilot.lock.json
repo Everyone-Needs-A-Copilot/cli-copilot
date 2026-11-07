@@ -4,12 +4,12 @@
       "component": "claude",
       "files": [
         {
-          "checksum": "sha256:1c9b9174d32be30c82acf0bcb4f9fcb12f3280e720f31b5c6e470522bee0515d",
+          "checksum": "sha256:9ad4a5feda4b9e47a2bdf66400c4ef2f06c9c252d84ef34b6529c44145cb0bb4",
           "ownership": "framework",
           "path": ".claude/commands/protocol.md"
         },
         {
-          "checksum": "sha256:8f46333a585b6281c949f9576c76514a560bc97c97dc58ed6c7e1a354617cb94",
+          "checksum": "sha256:6e0b6bb8cf1a3578cbfd144d942b422036205df7ae8cca7c448f4530a0b9b3d2",
           "ownership": "framework",
           "path": ".claude/commands/continue.md"
         },
@@ -34,7 +34,7 @@
           "path": ".claude/commands/extensions.md"
         },
         {
-          "checksum": "sha256:d088e64cb3ecf38f7201d55669678aec5781bf04d64f37aadc3416c062f54c61",
+          "checksum": "sha256:7757254dcc8671f6799c7a74e34e9e21c40ffead0468c3a996773038d7e26140",
           "ownership": "framework",
           "path": ".claude/commands/orchestrate.md"
         },
@@ -49,89 +49,89 @@
           "path": ".claude/hooks/copilot-hook.sh"
         },
         {
-          "checksum": "sha256:e07f0b7794e79f69476dcfc1ff1e6408034a97c3e926afb96935996dea4a030a",
+          "checksum": "sha256:aaf5ffbf1c3c5ce94dd2fa4830a613f3b14f25009479447340bc4828234787e5",
           "ownership": "framework",
           "path": ".claude/agents/cco.md"
         },
         {
-          "checksum": "sha256:b576d9466360ad0a7cda663558089a0494738a86dcc13546f28fa3065ffb7fb0",
+          "checksum": "sha256:def63389224e0982e83f454789533e6c7efcbd9fcc8739e10e9dba77682bda0e",
           "ownership": "framework",
           "path": ".claude/agents/cpa.md"
         },
         {
-          "checksum": "sha256:a2ed9897b5efa26780c906b35192f2e2974b9cae9ed3b8a3a3e311fda07734f3",
+          "checksum": "sha256:4100c0c43638e253f632c66469c983c81ffa3f9a56b384b171b2341fbea48107",
           "ownership": "framework",
           "path": ".claude/agents/cs.md"
         },
         {
-          "checksum": "sha256:be8def7ac3d70bcdb0df7af3d14abcbbb6d992d177333904532e1fbd514c47f7",
+          "checksum": "sha256:e087266891ab2aab016ca72db3e5a40b59d614b2601769826bfba60510d4450a",
           "ownership": "framework",
           "path": ".claude/agents/cw.md"
         },
         {
-          "checksum": "sha256:7eebf8d305fe5ab211d5e04dbf9a72f214c086e789fde11f49b3bcf688e8d5d7",
+          "checksum": "sha256:6a17d67213195e3faf543117471418ba7a038dbc92d5af3433962f6ed3ecc97a",
           "ownership": "framework",
           "path": ".claude/agents/do.md"
         },
         {
-          "checksum": "sha256:47c4a8ce3eae5a9db191d8504bf71c9c1f77614f2a937566e9bfd0e5c4801d97",
+          "checksum": "sha256:3d440382a28b4f0fdb8cbaf13cf26ce4c3571fecc7950fee6dad323d1aa7eaac",
           "ownership": "framework",
           "path": ".claude/agents/doc.md"
         },
         {
-          "checksum": "sha256:869b61ab53f1f43b9fab23c87c60a3cd4bff48126c4bf8d89707364cd405e9db",
+          "checksum": "sha256:9bb05db61b0bacd4ebc91985db1a6698cd9229578ddc728d4c4ab32ea8823aa3",
           "ownership": "framework",
           "path": ".claude/agents/ind.md"
         },
         {
-          "checksum": "sha256:9f660482cf8b48b8590d16ca9e36e689f9e670ec1487c0ab825a7d8fe0e142e1",
+          "checksum": "sha256:7f05862c81c6c86265df8a241ac716a03c588561449ae6406f9832404d958337",
           "ownership": "framework",
           "path": ".claude/agents/me.md"
         },
         {
-          "checksum": "sha256:d57a3fd38a1e419df2572e5a0039146a1d2b7b3180d0e2dfe3491e45c8961dd3",
+          "checksum": "sha256:1c462d1e3ecace4cd880fa4deb8bc551dfc6909c80cba542766d99a3d0bde872",
           "ownership": "framework",
           "path": ".claude/agents/qa.md"
         },
         {
-          "checksum": "sha256:6b5b0181c7dc10418708304374445159eac924caf2685f01e6392ce899d1af47",
+          "checksum": "sha256:c5e5fa47b7de4900e7733048545402fef7639350d135bd6e3f5f0e40092cb49a",
           "ownership": "framework",
           "path": ".claude/agents/sd.md"
         },
         {
-          "checksum": "sha256:1b9832190c29e79f78a39fac354c3c19c150358977a6149128ac636b36ac28b9",
+          "checksum": "sha256:f95fb4140c82ee66ec7cd99cd31b3f15151ab3f462110cc7beceba9396098d73",
           "ownership": "framework",
           "path": ".claude/agents/sec.md"
         },
         {
-          "checksum": "sha256:d5d70f89a47f78a3d6b493071605cfbf93fb09a2d09e143512b90aa1f8c0103b",
+          "checksum": "sha256:5238e53dbc6f9e91ef3c49780c9ee2062952c14d4d99283b1a099318cd646a5a",
           "ownership": "framework",
           "path": ".claude/agents/ta.md"
         },
         {
-          "checksum": "sha256:67967407baea4d0ae15f1b2fb35d8568b997a65d6bfe6f227a86e5885d032dd3",
+          "checksum": "sha256:547d040d9bcaf5dc499df6a809b0f9b217a43a304d1869d327d4ec3ed587638c",
           "ownership": "framework",
           "path": ".claude/agents/uid.md"
         },
         {
-          "checksum": "sha256:f1fe32585c0eb75092f9e092d266c73066bdcd1429e413c11c2a566d7cb6a56b",
+          "checksum": "sha256:6511491dd6c70bd62c0112971402593e5c19dcc5410fd98a41d0c35228de4034",
           "ownership": "framework",
           "path": ".claude/agents/uids.md"
         },
         {
-          "checksum": "sha256:6176a70677316552588acc520298f9aebe0daece9e1184dcde32f3fa857755d0",
+          "checksum": "sha256:23b78f1a6ab8fd1d058223652ca9ff29f4d7138ba67d3a2b7a7b1af6b4d65b72",
           "ownership": "framework",
           "path": ".claude/agents/uxd.md"
         },
         {
-          "checksum": "sha256:77ef3902f70d6fe4835f8e1ddd0a1afd28751ade0a43f7bc95bc2fbc00b1617b",
+          "checksum": "sha256:cbb686fbda037c5e91bb7dc1034425450eff1535fe706ea6b6e275b0de9c3fce",
           "ownership": "framework",
           "path": ".claude/agents/kc.md"
         }
       ],
       "ownership_mode": "full",
-      "release_tag": "v5.33.1",
-      "version": "5.33.1"
+      "release_tag": "v5.34.8",
+      "version": "5.34.8"
     }
   ],
   "mutations": [

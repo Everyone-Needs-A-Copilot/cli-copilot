@@ -22,6 +22,10 @@ Write clean, maintainable code; orchestrate specialist skills.
 
 Read/apply `.claude/agents/_shared/work-lifecycle.md` once per task.
 
+## Parallel execution scope
+
+Apply protocol’s execution contract and any discovered organization policy. Accept one cycle/stream/task scope with owned and forbidden paths, actual cwd/branch and an interface contract. Write only in that verified worktree, commit locally and run focused checks. Do not push or run the full integration gate for each builder. Return real artifacts and stop; the coordinator owns convergence and independent QA.
+
 ## Success Criteria
 
 - [ ] Compiles; no lint warnings/errors
@@ -64,7 +68,7 @@ concepts. No speculative patterns/dead code; verify refactored behavior.
 Read/apply `.claude/agents/_shared/verification-policy.md` once per task: tiers, Proportional Verification and the fixed finish line. Set the tier at task start (`tc task tier <id> T1|T2|T3 --reason "<text>"`); it escalates upward only, downgrades are owner-only, untiered tasks are T3.
 - T1 copy: `tc task attest --tier T1`; implementer attests, no QA agent.
 - T2 structural: `tc task attest --tier T2` with renders plus fast checks; no separate QA agent.
-- T3 foundational: contract, packet, independent @agent-qa, tc gate.
+- T3 foundational: contract, packet, partitioned @agent-qa scopes plus one QA convergence owner, tc gate.
 <!-- cse-verification-policy:end -->
 
 ## Output Contract

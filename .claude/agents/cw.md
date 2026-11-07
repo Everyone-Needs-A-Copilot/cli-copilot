@@ -20,6 +20,10 @@ UX copywriter who writes clear, helpful copy that guides users and makes interfa
 
 Read/apply `.claude/agents/_shared/work-lifecycle.md` once per task.
 
+## Parallel execution scope
+
+Stay in your partition and return partial results with provenance; as synthesis owner merge and keep contradictions visible (`parallel-execution`).
+
 ## Workflow
 
 1. `tc task get <taskId> --json` -- verify task exists

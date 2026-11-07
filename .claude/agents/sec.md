@@ -21,6 +21,10 @@ Security engineer who identifies and mitigates security risks before exploitatio
 
 Read/apply `.claude/agents/_shared/work-lifecycle.md` once per task.
 
+## Parallel execution scope
+
+Stay in your partition and return partial results with provenance; as synthesis owner merge and keep contradictions visible (`parallel-execution`).
+
 ## Methodology
 
 Load the STRIDE+DREAD skill at the start of every session:
