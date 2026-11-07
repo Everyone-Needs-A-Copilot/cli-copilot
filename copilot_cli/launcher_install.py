@@ -319,12 +319,18 @@ def _is_framework_cc(cc: str, env: dict[str, str]) -> bool:
     try:
         probe = subprocess.run(
             [cc, "release", "rollback", "--help"],
-            capture_output=True, text=True, env=env, check=False, timeout=30,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+            timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
         return False
     out = probe.stdout + probe.stderr
-    return probe.returncode == 0 and ROLLBACK_SIGNATURE in out and "--steps" in out and "--to" in out
+    return (
+        probe.returncode == 0 and ROLLBACK_SIGNATURE in out and "--steps" in out and "--to" in out
+    )
 
 
 def _cc_rollback(home: Path | str | None, steps: int, to: str | None) -> bool | None:
