@@ -1,6 +1,11 @@
 {
   "components": [
-    "claude"
+    "claude",
+    "codex"
+  ],
+  "runtimes": [
+    "claude",
+    "codex"
   ],
   "schema_version": "1.0"
 }
